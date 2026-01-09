@@ -1,6 +1,6 @@
 <?php
 /**
- * Stablecoin Pay Checkout Integration
+ * Coinsub Checkout Integration
  * 
  * This file contains the HTML, CSS, and JavaScript for the checkout iframe
  * The iframe URL is whitelabeled based on merchant credentials
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) {
 }
 ?>
 
-<!-- Stablecoin Pay Checkout Styles -->
+<!-- Coinsub Checkout Styles -->
 <style>
 /* POPUP STYLES */
 /* --- MODAL OVERLAY --- */
@@ -126,7 +126,7 @@ body.coinsub-modal-open #coinsub-checkout-container {
 }
 </style>
 
-<!-- Stablecoin Pay Checkout JavaScript -->
+<!-- Coinsub Checkout JavaScript -->
 <script type="text/javascript">
 jQuery(document).ready(function($) {
     // Only load functionality on checkout page
@@ -216,7 +216,7 @@ jQuery(document).ready(function($) {
                                 <div id="coinsub-checkout-container">
                                     <div class="coinsub-modal-header">
                                         <div class="coinsub-header-title">
-                                            Pay with Stablecoin Pay
+                                            Pay with Coinsub
                                         </div>
                                         <button id="coinsub-close-btn" title="Close Checkout">
                                             <span style="font-size: 28px;">&times;</span>

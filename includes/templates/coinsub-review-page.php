@@ -1,8 +1,8 @@
 <?php
 /**
- * Stablecoin Pay review / explainer page template.
+ * Coinsub review / explainer page template.
  *
- * This page helps merchants understand that Stablecoin Pay is powered by CoinSub.
+ * This page helps merchants understand Coinsub.
  *
  * @package CoinSub
  */

@@ -30,7 +30,7 @@ class CoinSub_Admin_Payments {
     private function get_api_client() {
         if ($this->api_client === null) {
             if (!class_exists('CoinSub_API_Client')) {
-                require_once plugin_dir_path(__FILE__) . 'class-sp-api-client.php';
+                require_once plugin_dir_path(__FILE__) . 'class-coinsub-api-client.php';
             }
             $this->api_client = new CoinSub_API_Client();
         }
@@ -42,7 +42,7 @@ class CoinSub_Admin_Payments {
      */
     private function get_branding() {
         if (!class_exists('CoinSub_Whitelabel_Branding')) {
-            require_once plugin_dir_path(__FILE__) . 'class-sp-whitelabel-branding.php';
+            require_once plugin_dir_path(__FILE__) . 'class-coinsub-whitelabel-branding.php';
         }
         return new CoinSub_Whitelabel_Branding();
     }
@@ -63,20 +63,20 @@ class CoinSub_Admin_Payments {
     private function get_display_company_name() {
         // Only use whitelabel branding if settings are saved
         if (!$this->are_settings_saved()) {
-            return 'Stablecoin Pay';
+            return 'Coinsub';
         }
         
         // Settings are saved - try to get whitelabel branding
         $branding = $this->get_branding();
         $branding_data = $branding->get_branding(false);
-        return !empty($branding_data['company']) ? $branding_data['company'] : 'Stablecoin Pay';
+        return !empty($branding_data['company']) ? $branding_data['company'] : 'Coinsub';
     }
     
     /**
      * Add admin menu item
      */
     public function add_admin_menu() {
-        $menu_title = __('Payments', 'coinsub');
+        $menu_title = __('Coinsub Payments', 'coinsub');
         
         add_submenu_page(
             'woocommerce',
@@ -103,7 +103,7 @@ class CoinSub_Admin_Payments {
      * Render payments management page
      */
     public function render_payments_page() {
-        $page_title = __('Payments', 'coinsub');
+        $page_title = __('Coinsub Payments', 'coinsub');
         
         // Get payments from API
         $api_client = $this->get_api_client();
@@ -137,7 +137,7 @@ class CoinSub_Admin_Payments {
             <h1 class="wp-heading-inline">
                 <img src="<?php echo esc_url(COINSUB_PLUGIN_URL . 'images/coinsub.svg'); ?>" 
                      style="height: 30px; vertical-align: middle; margin-right: 10px;" 
-                     alt="Stablecoin Pay" />
+                     alt="Coinsub" />
                 <?php echo esc_html($page_title); ?>
             </h1>
             

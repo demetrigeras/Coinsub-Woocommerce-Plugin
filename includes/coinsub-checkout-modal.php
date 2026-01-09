@@ -1,6 +1,6 @@
 <?php
 /**
- * Stablecoin Pay Checkout Integration
+ * Coinsub Checkout Integration
  * 
  * This file contains the HTML, CSS, and JavaScript for the checkout iframe
  * The iframe URL is whitelabeled based on merchant credentials
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) {
 }
 ?>
 
-<!-- Stablecoin Pay Checkout Styles -->
+<!-- Coinsub Checkout Styles -->
 <style>
 #coinsub-checkout-container {
     margin: 20px 0;
@@ -46,7 +46,7 @@ body.coinsub-iframe-visible .woocommerce-checkout #place_order {
 }
 </style>
 
-<!-- Stablecoin Pay Checkout JavaScript -->
+<!-- Coinsub Checkout JavaScript -->
 <script type="text/javascript">
 jQuery(document).ready(function($) {
     // Only load CoinSub checkout functionality if we're on checkout page

@@ -1,9 +1,9 @@
 <?php
 /**
- * Plugin Name: Stablecoin Pay
- * Description: Accept cryptocurrency payments with Stablecoin Pay. Simple crypto payments for WooCommerce.
+ * Plugin Name: Coinsub
+ * Description: Accept cryptocurrency payments with Coinsub. Simple crypto payments for WooCommerce.
  * Version: 1.0.0
- * Author: Stablecoin Pay
+ * Author: Coinsub
  * License: GPL v2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain: coinsub
@@ -36,7 +36,7 @@ if (!in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get
  * WooCommerce missing notice
  */
 function coinsub_woocommerce_missing_notice() {
-    echo '<div class="error"><p><strong>Stablecoin Pay</strong> requires WooCommerce to be installed and active.</p></div>';
+    echo '<div class="error"><p><strong>Coinsub</strong> requires WooCommerce to be installed and active.</p></div>';
 }
 
 /**
@@ -50,17 +50,18 @@ function coinsub_commerce_init() {
     }
     
     // Include required files
-    require_once COINSUB_PLUGIN_DIR . 'includes/class-sp-api-client.php';
-    require_once COINSUB_PLUGIN_DIR . 'includes/class-sp-whitelabel-branding.php';
-    require_once COINSUB_PLUGIN_DIR . 'includes/class-sp-payment-gateway.php';
-    require_once COINSUB_PLUGIN_DIR . 'includes/class-sp-webhook-handler.php';
-    require_once COINSUB_PLUGIN_DIR . 'includes/class-sp-order-manager.php';
-    require_once COINSUB_PLUGIN_DIR . 'includes/class-sp-admin-logs.php';
-    require_once COINSUB_PLUGIN_DIR . 'includes/class-sp-cart-sync.php';
-    require_once COINSUB_PLUGIN_DIR . 'includes/class-sp-subscriptions.php';
-    require_once COINSUB_PLUGIN_DIR . 'includes/class-sp-admin-subscriptions.php';
-    require_once COINSUB_PLUGIN_DIR . 'includes/class-sp-admin-payments.php';
-    require_once COINSUB_PLUGIN_DIR . 'includes/class-sp-review-page.php';
+    require_once COINSUB_PLUGIN_DIR . 'includes/class-coinsub-plugin-installer.php'; // Auto-install required plugins
+    require_once COINSUB_PLUGIN_DIR . 'includes/class-coinsub-api-client.php';
+    require_once COINSUB_PLUGIN_DIR . 'includes/class-coinsub-whitelabel-branding.php';
+    require_once COINSUB_PLUGIN_DIR . 'includes/class-coinsub-payment-gateway.php';
+    require_once COINSUB_PLUGIN_DIR . 'includes/class-coinsub-webhook-handler.php';
+    require_once COINSUB_PLUGIN_DIR . 'includes/class-coinsub-order-manager.php';
+    require_once COINSUB_PLUGIN_DIR . 'includes/class-coinsub-admin-logs.php';
+    require_once COINSUB_PLUGIN_DIR . 'includes/class-coinsub-cart-sync.php';
+    require_once COINSUB_PLUGIN_DIR . 'includes/class-coinsub-subscriptions.php';
+    require_once COINSUB_PLUGIN_DIR . 'includes/class-coinsub-admin-subscriptions.php';
+    require_once COINSUB_PLUGIN_DIR . 'includes/class-coinsub-admin-payments.php';
+    require_once COINSUB_PLUGIN_DIR . 'includes/class-coinsub-review-page.php';
     
     // Register custom order status
     
@@ -154,7 +155,7 @@ function coinsub_add_gateway_class($methods) {
  */
 function coinsub_register_review_rewrite_rule() {
     add_rewrite_rule(
-        '^stablecoin-pay-review/?$',
+        '^coinsub-review/?$',
         'index.php?coinsub_review=1',
         'top'
     );
