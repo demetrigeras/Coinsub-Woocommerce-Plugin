@@ -3,7 +3,6 @@
  * Coinsub Checkout Integration
  * 
  * This file contains the HTML, CSS, and JavaScript for the checkout iframe
- * The iframe URL is whitelabeled based on merchant credentials
  */
 
 if (!defined('ABSPATH')) {

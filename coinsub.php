@@ -1,9 +1,11 @@
 <?php
 /**
  * Plugin Name: Coinsub
+ * Plugin URI: https://coinsub.io/woocommerce
  * Description: Accept cryptocurrency payments with Coinsub. Simple crypto payments for WooCommerce.
  * Version: 1.0.0
  * Author: Coinsub
+ * Author URI: https://coinsub.io
  * License: GPL v2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain: coinsub
@@ -50,9 +52,7 @@ function coinsub_commerce_init() {
     }
     
     // Include required files
-    require_once COINSUB_PLUGIN_DIR . 'includes/class-coinsub-plugin-installer.php'; // Auto-install required plugins
     require_once COINSUB_PLUGIN_DIR . 'includes/class-coinsub-api-client.php';
-    require_once COINSUB_PLUGIN_DIR . 'includes/class-coinsub-whitelabel-branding.php';
     require_once COINSUB_PLUGIN_DIR . 'includes/class-coinsub-payment-gateway.php';
     require_once COINSUB_PLUGIN_DIR . 'includes/class-coinsub-webhook-handler.php';
     require_once COINSUB_PLUGIN_DIR . 'includes/class-coinsub-order-manager.php';

@@ -13,19 +13,16 @@ if (!defined('ABSPATH')) {
 
 get_header();
 
-// Get whitelabel branding
-$whitelabel_branding = new CoinSub_Whitelabel_Branding();
-$branding_data = $whitelabel_branding->get_branding();
-
+// Default branding data (Coinsub only - no white-label)
 $default_branding = array(
-    'title'        => sprintf(__('About %s', 'coinsub'), $branding_data['company']),
+    'title'        => __('About Coinsub', 'coinsub'),
     'subtitle'     => __('Your dedicated crypto payments experience', 'coinsub'),
-    'logo_url'     => $whitelabel_branding->get_logo_url('default', 'light'),
-    'powered_by'   => $branding_data['powered_by'],
-    'description'  => sprintf(__('%s delivers a white-label checkout that inherits your brand while leveraging CoinSub\'s settlement rails and compliance tooling.', 'coinsub'), $branding_data['company']),
-    'what_is'      => sprintf(__('%s is a cryptocurrency payment solution that enables your customers to pay with USDC and other stablecoins directly from their crypto wallets. All transactions are processed securely on the blockchain with instant settlement.', 'coinsub'), $branding_data['company']),
+    'logo_url'     => COINSUB_PLUGIN_URL . 'images/coinsub.svg',
+    'powered_by'   => __('Powered by Coinsub', 'coinsub'),
+    'description'  => __('Coinsub delivers a secure cryptocurrency checkout experience that enables you to accept crypto payments seamlessly.', 'coinsub'),
+    'what_is'      => __('Coinsub is a cryptocurrency payment solution that enables your customers to pay with USDC and other stablecoins directly from their crypto wallets. All transactions are processed securely on the blockchain with instant settlement.', 'coinsub'),
     'how_it_works' => array(
-        sprintf(__('Customer selects %s at checkout', 'coinsub'), $branding_data['company']) => sprintf(__('Your customers choose %s as their payment method during checkout', 'coinsub'), $branding_data['company']),
+        __('Customer selects Coinsub at checkout', 'coinsub') => __('Your customers choose Coinsub as their payment method during checkout', 'coinsub'),
         __('Connect crypto wallet', 'coinsub') => __('Customers connect their Web3 wallet (MetaMask, WalletConnect, etc.)', 'coinsub'),
         __('Approve payment', 'coinsub') => __('Customers approve the transaction in their wallet', 'coinsub'),
         __('Instant confirmation', 'coinsub') => __('Payment is confirmed on-chain and your order is automatically processed', 'coinsub'),
@@ -34,16 +31,16 @@ $default_branding = array(
         __('Accept USDC payments', 'coinsub') => __('Receive payments in USDC on multiple networks (Polygon, Ethereum, etc.)', 'coinsub'),
         __('Subscriptions support', 'coinsub') => __('Set up recurring payments for subscription products', 'coinsub'),
         __('Automatic reconciliation', 'coinsub') => __('Orders update automatically when payments are confirmed', 'coinsub'),
-        __('Secure & compliant', 'coinsub') => __('CoinSub handles custody, compliance, and security infrastructure', 'coinsub'),
+        __('Secure & compliant', 'coinsub') => __('Coinsub handles custody, compliance, and security infrastructure', 'coinsub'),
     ),
     'highlights'   => array(
-        __('Branded checkout flows for every white-label partner', 'coinsub'),
+        __('Simple crypto payment integration', 'coinsub'),
         __('USDC on/off ramps, subscriptions, and automated reconciliation', 'coinsub'),
-        __('CoinSub\'s infrastructure keeps custody and token routing secure', 'coinsub'),
+        __('Coinsub\'s infrastructure keeps custody and token routing secure', 'coinsub'),
     ),
     'cta_text'     => __('Return to Checkout', 'coinsub'),
     'cta_url'      => wc_get_page_permalink('checkout'),
-    'support_text' => __('Need help linking your merchant ID or API key? Reach out to your platform admin or CoinSub support to get branded assets configured.', 'coinsub'),
+    'support_text' => __('Need help with your merchant ID or API key? Reach out to Coinsub support for assistance.', 'coinsub'),
 );
 
 $branding = wp_parse_args(

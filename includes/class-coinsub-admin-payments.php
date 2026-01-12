@@ -38,38 +38,10 @@ class CoinSub_Admin_Payments {
     }
     
     /**
-     * Get whitelabel branding class
-     */
-    private function get_branding() {
-        if (!class_exists('CoinSub_Whitelabel_Branding')) {
-            require_once plugin_dir_path(__FILE__) . 'class-coinsub-whitelabel-branding.php';
-        }
-        return new CoinSub_Whitelabel_Branding();
-    }
-    
-    /**
-     * Check if settings are saved (merchant ID and API key exist)
-     */
-    private function are_settings_saved() {
-        $gateway_settings = get_option('woocommerce_coinsub_settings', array());
-        $merchant_id = isset($gateway_settings['merchant_id']) ? trim($gateway_settings['merchant_id']) : '';
-        $api_key = isset($gateway_settings['api_key']) ? trim($gateway_settings['api_key']) : '';
-        return !empty($merchant_id) && !empty($api_key);
-    }
-    
-    /**
-     * Get company name for display (whitelabel if settings saved, otherwise default)
+     * Get company name for display
      */
     private function get_display_company_name() {
-        // Only use whitelabel branding if settings are saved
-        if (!$this->are_settings_saved()) {
-            return 'Coinsub';
-        }
-        
-        // Settings are saved - try to get whitelabel branding
-        $branding = $this->get_branding();
-        $branding_data = $branding->get_branding(false);
-        return !empty($branding_data['company']) ? $branding_data['company'] : 'Coinsub';
+        return 'Coinsub';
     }
     
     /**

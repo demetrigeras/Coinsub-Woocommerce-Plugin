@@ -3,7 +3,6 @@
  * Coinsub Checkout Integration
  * 
  * This file contains the HTML, CSS, and JavaScript for the checkout iframe
- * The iframe URL is whitelabeled based on merchant credentials
  */
 
 if (!defined('ABSPATH')) {
@@ -231,9 +230,7 @@ jQuery(document).ready(function($) {
                         $('#coinsub-checkout-container').remove();
                         
                         // Create iframe container above the payment button
-                        // IMPORTANT: The checkoutUrl from the API is already whitelabeled
-                        // It will use the whitelabel domain (e.g., buy.vantack.com) based on merchant credentials
-                        // The iframe content will display the whitelabel branding automatically
+                        // The checkoutUrl from the API points to the Coinsub checkout page
                         var iframeContainer = $('<div id="coinsub-checkout-container" style="margin: 20px 0; background: white; border-radius: 16px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1); overflow: hidden;"><iframe id="coinsub-checkout-iframe" src="' + checkoutUrl + '" style="width: 100%; height: 800px; border: none;" allow="clipboard-read *; publickey-credentials-create *; publickey-credentials-get *; autoplay *; camera *; microphone *; payment *; fullscreen *" onload="handleIframeLoad()"></iframe></div>');
                         
                         // Insert above the payment button

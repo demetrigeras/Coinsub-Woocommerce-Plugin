@@ -15,8 +15,8 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
     private $brand_company = ''; // No default - will be set from branding API
     private $button_logo_url = ''; // Logo URL for button (injected via JS)
     private $button_company_name = ''; // Company name for button
-    private $checkout_title = ''; // Whitelabel title for checkout only (not admin)
-    private $checkout_icon = ''; // Whitelabel icon for checkout only (not admin)
+    private $checkout_title = ''; // Title for checkout only (not admin)
+    private $checkout_icon = ''; // Icon for checkout only (not admin)
     
     /**
      * Constructor
@@ -48,38 +48,20 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
         $this->init_form_fields();
         $this->init_settings();
         
-        // Set default title for admin (always "Coinsub" in admin)
-        // Whitelabel branding will only be applied on checkout (frontend)
-        $this->title = 'Pay with Coinsub'; // Default for admin display
+        // Set default title and branding
+        $this->title = 'Pay with Coinsub';
         $this->description = '';
         $this->enabled = $this->get_option('enabled', 'yes');
         
         // Initialize API client
         $this->api_client = new CoinSub_API_Client();
         
-        // CRITICAL: Only load whitelabel branding on frontend (checkout), NOT in admin
-        // Admin/settings page should always show "Coinsub"
-        if (!is_admin()) {
-            // Check if we need to refresh branding (deferred from previous save)
-            // This prevents timeout during save - branding fetch happens on next page load
-            $refresh_branding = get_transient('coinsub_refresh_branding_on_load');
-            if ($refresh_branding) {
-                error_log('CoinSub Whitelabel: 🔄 Deferred branding fetch triggered - fetching now...');
-                delete_transient('coinsub_refresh_branding_on_load');
-                // Load branding with force refresh (this will make API calls)
-                $this->load_whitelabel_branding(true);
-            } else {
-                // Load whitelabel branding from cache only (no API calls)
-                $this->load_whitelabel_branding(false);
-            }
-        } else {
-            // In admin, always use default branding (no whitelabel)
-            $this->checkout_title = 'Pay with Coinsub';
-            $this->checkout_icon = COINSUB_PLUGIN_URL . 'images/coinsub.svg';
-            $this->button_logo_url = COINSUB_PLUGIN_URL . 'images/coinsub.svg';
-            $this->button_company_name = 'Coinsub';
-            // Don't log in admin (reduces log noise)
-        }
+        // Set default branding (no white-label)
+        $this->checkout_title = 'Pay with Coinsub';
+        $this->checkout_icon = COINSUB_PLUGIN_URL . 'images/coinsub.svg';
+        $this->button_logo_url = COINSUB_PLUGIN_URL . 'images/coinsub.svg';
+        $this->button_company_name = 'Coinsub';
+        $this->brand_company = 'Coinsub';
         
         // Only log constructor details on checkout, not in admin (reduces log noise)
         if (is_checkout()) {
@@ -376,136 +358,7 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
      * Default: api.coinsub.io/v1
      */
     public function get_api_base_url() {
-        // Centralized CoinSub API - ALL merchants use this endpoint
-        // The API determines whitelabel branding based on Merchant ID
-        return 'https://api.coinsub.io/v1'; // Production
-        // return 'https://test-api.coinsub.io/v1'; // Test environment
-    }
-    
-    /**
-     * Load whitelabel branding and update gateway display
-     */
-    /**
-     * Load whitelabel branding
-     * 
-     * CRITICAL: This method ONLY affects checkout (frontend), NOT admin!
-     * Admin/settings page always shows "Coinsub" regardless of whitelabel.
-     * 
-     * @param bool $force_refresh If true, force API call to refresh branding. If false, use cache only.
-     */
-    private function load_whitelabel_branding($force_refresh = false) {
-        // Prevent multiple loads in the same request (gateway is instantiated multiple times)
-        static $branding_loaded = false;
-        static $cached_branding = null;
-        
-        error_log('CoinSub Whitelabel: 🔍 Cache check - branding_loaded: ' . ($branding_loaded ? 'YES' : 'NO') . ', force_refresh: ' . ($force_refresh ? 'YES' : 'NO'));
-        
-        if ($branding_loaded && !$force_refresh) {
-            error_log('CoinSub Whitelabel: ⚡ Using cached branding from previous load in same request');
-            // Restore cached values
-            if ($cached_branding) {
-                $this->brand_company = $cached_branding['brand_company'];
-                $this->checkout_title = $cached_branding['checkout_title'];
-                $this->checkout_icon = $cached_branding['checkout_icon'];
-                $this->button_logo_url = $cached_branding['button_logo_url'];
-                $this->button_company_name = $cached_branding['button_company_name'];
-                error_log('CoinSub Whitelabel: ⚡ Restored branding - Title: "' . $this->checkout_title . '", Company: "' . $this->brand_company . '"');
-            }
-            return;
-        }
-        
-        error_log('CoinSub Whitelabel: Loading branding for CHECKOUT ONLY (force_refresh: ' . ($force_refresh ? 'yes' : 'no') . ')...');
-        
-        // CRITICAL FIX: Check if credentials exist before loading branding
-        // If no credentials, clear any old branding and use defaults
-        // This prevents old branding (e.g., "Vantack") from showing when credentials are removed
-        $merchant_id = $this->get_option('merchant_id');
-        $api_key = $this->get_option('api_key');
-        
-        if (empty($merchant_id) && empty($api_key)) {
-            error_log('CoinSub Whitelabel: ⚠️ No credentials - clearing old branding and using defaults');
-        $branding = new CoinSub_Whitelabel_Branding();
-            $branding->clear_cache(); // Clear any old branding from previous merchant
-            $this->brand_company = 'Coinsub';
-            // Store checkout-specific data (NOT $this->title which is for admin)
-            $this->checkout_title = 'Pay with Coinsub';
-            $this->checkout_icon = COINSUB_PLUGIN_URL . 'images/coinsub.svg';
-            $this->button_logo_url = COINSUB_PLUGIN_URL . 'images/coinsub.svg';
-            $this->button_company_name = 'Coinsub';
-            error_log('CoinSub Whitelabel: ✅ Using default branding (no credentials, no payment provider) - Checkout Title: "Pay with Coinsub"');
-            
-            // Cache this for subsequent loads
-            $branding_loaded = true;
-            $cached_branding = array(
-                'brand_company' => $this->brand_company,
-                'checkout_title' => $this->checkout_title,
-                'checkout_icon' => $this->checkout_icon,
-                'button_logo_url' => $this->button_logo_url,
-                'button_company_name' => $this->button_company_name,
-            );
-            error_log('CoinSub Whitelabel: 💾 Cached default branding');
-            return;
-        }
-        
-        // Credentials exist - proceed with branding load
-        $branding = new CoinSub_Whitelabel_Branding();
-        $branding_data = $branding->get_branding($force_refresh);
-        
-        // Only update if branding data exists and has company name
-        if (!empty($branding_data) && isset($branding_data['company']) && !empty($branding_data['company'])) {
-        $company_name = $branding_data['company'];
-            $this->brand_company = $company_name;
-            // Store checkout-specific title (NOT $this->title which is for admin)
-            $this->checkout_title = 'Pay with ' . $company_name;
-        
-            error_log('CoinSub Whitelabel: ✅ CHECKOUT TITLE SET - Title: "' . $this->checkout_title . '" | Company: "' . $company_name . '" | brand_company property: "' . $this->brand_company . '"');
-            
-            // Update checkout icon - prefer favicon (smaller, better for payment method icon)
-            $favicon_url = $branding->get_favicon_url();
-            if ($favicon_url) {
-                $this->checkout_icon = $favicon_url;
-                error_log('CoinSub Whitelabel: 🖼️ ✅ Set checkout icon to favicon: ' . $favicon_url);
-            } else {
-                // Fallback to default logo
-                $logo_url = $branding->get_logo_url('default', 'light');
-                if ($logo_url) {
-                    $this->checkout_icon = $logo_url;
-                    error_log('CoinSub Whitelabel: 🖼️ ✅ Set checkout icon to logo: ' . $logo_url);
-                } else {
-                    error_log('CoinSub Whitelabel: 🖼️ ⚠️ No logo URL returned, keeping default icon');
-                    $this->checkout_icon = COINSUB_PLUGIN_URL . 'images/coinsub.svg';
-                }
-            }
-            
-            // For button logo (larger), use the default logo
-            $logo_url = $branding->get_logo_url('default', 'light');
-            $this->button_logo_url = $logo_url ?: COINSUB_PLUGIN_URL . 'images/coinsub.svg';
-            $this->button_company_name = $company_name;
-            error_log('CoinSub Whitelabel: 🔘 Button logo URL set: ' . $this->button_logo_url);
-        } else {
-            // No branding found - use default "Pay with Coinsub" and CoinSub logo
-            error_log('CoinSub Whitelabel: ⚠️ No branding data found - using default "Pay with Coinsub" and CoinSub logo');
-            $this->brand_company = 'Coinsub';
-            $this->checkout_title = 'Pay with Coinsub';
-            $this->checkout_icon = COINSUB_PLUGIN_URL . 'images/coinsub.svg';
-            // Set default button logo URL
-            $this->button_logo_url = COINSUB_PLUGIN_URL . 'images/coinsub.svg';
-            $this->button_company_name = 'Coinsub';
-            error_log('CoinSub Whitelabel: ✅ Set default checkout title: "' . $this->checkout_title . '" and default icon: ' . $this->checkout_icon);
-            error_log('CoinSub Whitelabel: 🔘 Button logo URL set to default: ' . $this->button_logo_url);
-        }
-        
-        // Cache the branding for subsequent gateway instances in the same request
-        // This prevents the second instance from clearing the branding
-        $branding_loaded = true;
-        $cached_branding = array(
-            'brand_company' => $this->brand_company,
-            'checkout_title' => $this->checkout_title,
-            'checkout_icon' => $this->checkout_icon,
-            'button_logo_url' => $this->button_logo_url,
-            'button_company_name' => $this->button_company_name,
-        );
-        error_log('CoinSub Whitelabel: 💾 Cached branding for subsequent loads - Title: "' . $this->checkout_title . '", Company: "' . $this->brand_company . '"');
+        return 'https://api.coinsub.io/v1';
     }
     
     /**
@@ -526,16 +379,7 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
         
         // Check if form was submitted (save button clicked)
         if (isset($_POST['save']) && isset($_POST['woocommerce_' . $this->id . '_enabled'])) {
-            error_log('CoinSub Whitelabel: 🔔🔔🔔 maybe_process_admin_options() DETECTED FORM SUBMISSION! 🔔🔔🔔');
-            error_log('CoinSub Whitelabel: POST data keys: ' . implode(', ', array_keys($_POST)));
-            error_log('CoinSub Whitelabel: Merchant ID in POST: ' . (isset($_POST['woocommerce_coinsub_merchant_id']) ? 'YES - Value: ' . substr($_POST['woocommerce_coinsub_merchant_id'], 0, 20) . '...' : 'NO'));
-            error_log('CoinSub Whitelabel: API Key in POST: ' . (isset($_POST['woocommerce_coinsub_api_key']) ? 'YES - Length: ' . strlen($_POST['woocommerce_coinsub_api_key']) : 'NO'));
-            
-            // CRITICAL FIX: WooCommerce's process_admin_options() isn't being called automatically
-            // So we need to call it manually as a backup to ensure settings are saved
-            error_log('CoinSub Whitelabel: ⚠️ WooCommerce process_admin_options() not called automatically - calling manually as backup...');
             $this->process_admin_options();
-            error_log('CoinSub Whitelabel: ✅ process_admin_options() called manually - settings should now be saved');
         }
     }
     
@@ -543,68 +387,25 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
      * Update API client settings when gateway settings are saved
      * This is called by the hook: woocommerce_update_options_payment_gateways_coinsub
      * This hook fires AFTER WooCommerce has saved the settings to the database
-     * 
-     * NOTE: This is also called directly from process_admin_options() to ensure it runs
-     * We use a static flag to prevent duplicate execution
      */
     public function update_api_client_settings() {
-        // Prevent duplicate execution (could be called from hook AND process_admin_options)
+        // Prevent duplicate execution
         static $executed = false;
         if ($executed) {
-            error_log('CoinSub Whitelabel: ⚠️ update_api_client_settings() already executed, skipping duplicate call');
             return;
         }
         $executed = true;
-        
-        error_log('═══════════════════════════════════════════════════════════');
-        error_log('CoinSub Whitelabel: 🔔🔔🔔 SETTINGS SAVE DETECTED! 🔔🔔🔔');
-        error_log('CoinSub Whitelabel: update_api_client_settings() CALLED');
-        error_log('═══════════════════════════════════════════════════════════');
         
         // Reload settings from database (they were just saved by WooCommerce)
         $this->init_settings();
         
         $merchant_id = $this->get_option('merchant_id', '');
         $api_key = $this->get_option('api_key', '');
-        // Use centralized API URL
         $api_base_url = $this->get_api_base_url();
-        
-        error_log('CoinSub Whitelabel: 📝 Settings - Merchant ID: ' . (empty($merchant_id) ? 'EMPTY' : substr($merchant_id, 0, 20) . '...'));
-        error_log('CoinSub Whitelabel: 📝 Settings - API Key: ' . (strlen($api_key) > 0 ? substr($api_key, 0, 10) . '...' : 'EMPTY'));
-        error_log('CoinSub Whitelabel: 📝 Settings - API Base URL: ' . $api_base_url);
         
         // Update API client if we have credentials
         if (!empty($merchant_id) && !empty($api_key)) {
             $this->api_client->update_settings($api_base_url, $merchant_id, $api_key);
-            error_log('CoinSub Whitelabel: ✅ API client updated with credentials');
-        } else {
-            // No credentials - skip everything
-            error_log('CoinSub Whitelabel: ⚠️ Skipping - no credentials');
-            return;
-        }
-        
-        // CRITICAL FIX: Defer branding fetch to prevent timeout/crash during save
-        // Branding fetch involves multiple API calls that can take several seconds
-        // Instead of doing it synchronously (which causes timeouts), we'll:
-        // 1. Clear the cache immediately
-        // 2. Set a flag to fetch branding on next page load (fast save, slow fetch later)
-        error_log('CoinSub Whitelabel: ⚙️ Settings saved - Deferring branding fetch to prevent timeout');
-        
-        try {
-        $branding = new CoinSub_Whitelabel_Branding();
-        $branding->clear_cache();
-        
-            // Set a flag to trigger branding fetch on next page load
-            // This prevents the save from timing out due to slow API calls
-            set_transient('coinsub_refresh_branding_on_load', true, 60); // Flag expires in 60 seconds
-            error_log('CoinSub Whitelabel: ✅ Settings saved successfully! Branding will be fetched on next page load.');
-            
-        } catch (Exception $e) {
-            error_log('CoinSub Whitelabel: ❌ ERROR clearing cache: ' . $e->getMessage());
-            // Continue - don't break the save process
-        } catch (Error $e) {
-            error_log('CoinSub Whitelabel: ❌ FATAL ERROR clearing cache: ' . $e->getMessage());
-            // Continue - don't break the save process
         }
     }
     
@@ -613,74 +414,35 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
      * This is called automatically by WooCommerce when settings are saved
      */
     public function process_admin_options() {
-        // Prevent duplicate execution (could be called from WooCommerce AND maybe_process_admin_options)
+        // Prevent duplicate execution
         static $executed = false;
         if ($executed) {
-            error_log('CoinSub Whitelabel: ⚠️ process_admin_options() already executed, skipping duplicate call');
-            return parent::process_admin_options(); // Still call parent to save, but skip our custom logic
+            return parent::process_admin_options();
         }
         $executed = true;
-        
-        error_log('═══════════════════════════════════════════════════════════');
-        error_log('CoinSub Whitelabel: 🔔🔔🔔 process_admin_options() CALLED - Settings are being saved! 🔔🔔🔔');
-        error_log('═══════════════════════════════════════════════════════════');
-        error_log('CoinSub Whitelabel: POST data keys: ' . implode(', ', array_keys($_POST)));
-        
-        // Log POST data for merchant_id and api_key
-        if (isset($_POST['woocommerce_coinsub_merchant_id'])) {
-            $merchant_id_preview = substr($_POST['woocommerce_coinsub_merchant_id'], 0, 20);
-            error_log('CoinSub Whitelabel: 📝 POST merchant_id: ' . $merchant_id_preview . '... (length: ' . strlen($_POST['woocommerce_coinsub_merchant_id']) . ')');
-        } else {
-            error_log('CoinSub Whitelabel: ⚠️ POST merchant_id NOT SET');
-        }
-        
-        if (isset($_POST['woocommerce_coinsub_api_key'])) {
-            $api_key_length = strlen($_POST['woocommerce_coinsub_api_key']);
-            error_log('CoinSub Whitelabel: 📝 POST api_key: ' . ($api_key_length > 0 ? substr($_POST['woocommerce_coinsub_api_key'], 0, 10) . '... (length: ' . $api_key_length . ')' : 'EMPTY'));
-        } else {
-            error_log('CoinSub Whitelabel: ⚠️ POST api_key NOT SET - This is normal for password fields if unchanged');
-        }
         
         // IMPORTANT: For password fields, WooCommerce only sends them in POST if they're changed
         // If api_key is not in POST, we need to preserve the existing value
         $existing_api_key = $this->get_option('api_key', '');
         if (!isset($_POST['woocommerce_coinsub_api_key']) && !empty($existing_api_key)) {
-            // Password field not in POST means user didn't change it - preserve existing value
             $_POST['woocommerce_coinsub_api_key'] = $existing_api_key;
-            error_log('CoinSub Whitelabel: 🔒 Preserving existing API key (password field unchanged)');
         }
         
-        // Call parent to save settings first
+        // Call parent to save settings
         $result = parent::process_admin_options();
         
-        error_log('CoinSub Whitelabel: 🔔 Parent process_admin_options() returned. Result: ' . ($result ? 'SUCCESS (true)' : 'FAILED (false)'));
-        
-        // Verify settings were saved
+        // Update API client with new credentials
         $saved_merchant_id = $this->get_option('merchant_id', '');
         $saved_api_key = $this->get_option('api_key', '');
-        error_log('CoinSub Whitelabel: ✅ Saved merchant_id: ' . (empty($saved_merchant_id) ? 'EMPTY' : substr($saved_merchant_id, 0, 20) . '... (length: ' . strlen($saved_merchant_id) . ')'));
-        error_log('CoinSub Whitelabel: ✅ Saved api_key: ' . (empty($saved_api_key) ? 'EMPTY' : substr($saved_api_key, 0, 10) . '... (length: ' . strlen($saved_api_key) . ')'));
         
-        // Now fetch branding (if we have credentials)
-        // Wrap in try-catch to prevent fatal errors from breaking the save process
         if (!empty($saved_merchant_id) && !empty($saved_api_key)) {
             try {
-                error_log('CoinSub Whitelabel: 🔔 Calling update_api_client_settings() to fetch branding...');
                 $this->update_api_client_settings();
             } catch (Exception $e) {
-                error_log('CoinSub Whitelabel: ❌ ERROR fetching branding: ' . $e->getMessage());
-                error_log('CoinSub Whitelabel: ❌ Stack trace: ' . $e->getTraceAsString());
                 // Don't break the save process - settings were saved successfully
-            } catch (Error $e) {
-                error_log('CoinSub Whitelabel: ❌ FATAL ERROR fetching branding: ' . $e->getMessage());
-                error_log('CoinSub Whitelabel: ❌ Stack trace: ' . $e->getTraceAsString());
-                // Don't break the save process - settings were saved successfully
+                error_log('Coinsub: Error updating API client: ' . $e->getMessage());
             }
-        } else {
-            error_log('CoinSub Whitelabel: ⚠️ Skipping branding fetch - no credentials AND no payment provider name');
         }
-        
-        error_log('═══════════════════════════════════════════════════════════');
         
         return $result;
     }
@@ -1448,66 +1210,17 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
     
     /**
      * Get payment method title
-     * CRITICAL: Returns "Coinsub" in admin, whitelabel name on checkout
      */
     public function get_title() {
-        // In admin, always return "Coinsub" (no whitelabel)
-        if (is_admin()) {
-            return __('Coinsub', 'coinsub');
-        }
-        
-        // On checkout (frontend), use whitelabel title if available
-        if (!empty($this->checkout_title)) {
-            return $this->checkout_title;
-        }
-        
-        // Fallback to default
         return $this->title ?: __('Pay with Coinsub', 'coinsub');
     }
     
     /**
      * Get payment method icon
-     * CRITICAL: Returns default CoinSub logo in admin, whitelabel logo on checkout
      */
     public function get_icon() {
-        $icon_url = '';
-        
-        // Normalize company name once for all checks
-        $normalized_company = !empty($this->brand_company) ? strtolower(str_replace(' ', '', $this->brand_company)) : '';
-        
-        // In admin, always use default CoinSub logo (no whitelabel)
-        if (is_admin()) {
-            $icon_url = COINSUB_PLUGIN_URL . 'images/coinsub.svg';
-        } else {
-            // SPECIAL CASE: Payment Servers - use local high-res PNG (300x300)
-            if ($normalized_company === 'paymentservers') {
-                $icon_url = COINSUB_PLUGIN_URL . 'images/paymentservers-logo.png';
-                if (is_checkout()) {
-                    error_log('CoinSub Whitelabel: 🖼️ 📌 Using LOCAL Payment Servers PNG logo (300x300): ' . $icon_url);
-                }
-            } else {
-                // On checkout (frontend), use whitelabel icon if available
-                $icon_url = !empty($this->checkout_icon) ? $this->checkout_icon : COINSUB_PLUGIN_URL . 'images/coinsub.svg';
-            }
-        }
-        
-        // Only log on checkout, not in admin (reduces log noise)
-        if (is_checkout()) {
-            error_log('CoinSub Whitelabel: 🖼️ get_icon() called - Context: CHECKOUT - Using icon URL: ' . $icon_url);
-        }
-        
-        // Ensure we have a valid URL before creating HTML
-        if (empty($icon_url)) {
-            $icon_url = COINSUB_PLUGIN_URL . 'images/coinsub.svg';
-            error_log('CoinSub Whitelabel: ⚠️ Empty icon URL detected, using default');
-        }
-        
-        // Standard size for all payment methods (30px)
+        $icon_url = COINSUB_PLUGIN_URL . 'images/coinsub.svg';
         $icon_size = '30px';
-        
-        if (is_checkout()) {
-            error_log('CoinSub Whitelabel: 🖼️ Icon size: ' . $icon_size . ' for company: "' . $this->brand_company . '"');
-        }
         
         $icon_html = '<img src="' . esc_url($icon_url) . '" alt="' . esc_attr($this->get_title()) . '" style="max-width: ' . $icon_size . '; max-height: ' . $icon_size . '; height: auto; vertical-align: middle; margin-left: 8px;" />';
         
@@ -1516,32 +1229,9 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
     
     /**
      * Customize the payment button text
-     * CRITICAL: Only used on checkout (frontend), uses whitelabel data
      */
     public function get_order_button_text() {
-        // Get logo URL and company name from checkout-specific data
-        $logo_url = !empty($this->button_logo_url) ? $this->button_logo_url : COINSUB_PLUGIN_URL . 'images/coinsub.svg';
-        $company_name = !empty($this->button_company_name) ? $this->button_company_name : 'Coinsub';
-        
-        // If we have checkout title, extract company name from it
-        if (!empty($this->checkout_title) && empty($this->button_company_name)) {
-            // Extract company name from "Pay with CompanyName"
-            if (preg_match('/Pay with (.+)/', $this->checkout_title, $matches)) {
-                $company_name = $matches[1];
-                $this->button_company_name = $company_name;
-            }
-        }
-        
-        // Use checkout icon if available
-        if (!empty($this->checkout_icon)) {
-            $logo_url = $this->checkout_icon;
-            $this->button_logo_url = $logo_url;
-        }
-        
-        error_log('CoinSub Whitelabel: 🔘 Button text (CHECKOUT) - Company: "' . $company_name . '" | Logo URL: ' . $logo_url);
-        
-        // Return text only - logo will be added via JavaScript
-        return sprintf(__('Pay with %s', 'coinsub'), $company_name);
+        return __('Pay with Coinsub', 'coinsub');
     }
     
     /**

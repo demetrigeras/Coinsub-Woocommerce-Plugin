@@ -33,6 +33,11 @@ class CoinSub_Admin_Logs {
      * Display logs page
      */
     public function display_logs_page() {
+        // Check user capabilities
+        if (!current_user_can('manage_woocommerce')) {
+            wp_die(__('You do not have sufficient permissions to access this page.', 'coinsub'));
+        }
+        
         // Handle clear action
         if (isset($_GET['action']) && $_GET['action'] === 'clear' && check_admin_referer('coinsub-clear-logs')) {
             $this->clear_logs();
