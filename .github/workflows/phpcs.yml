@@ -38,13 +38,22 @@ jobs:
       run: |
         $HOME/.composer/vendor/bin/phpcs --config-set installed_paths $HOME/.composer/vendor/wp-coding-standards/wpcs
         
-    - name: Run PHPCS (Report Only)
+    - name: Auto-fix coding standards with PHPCBF
+      working-directory: ${{ github.workspace }}
+      run: |
+        echo "Running PHPCBF to auto-fix WordPress Coding Standards violations..."
+        $HOME/.composer/vendor/bin/phpcbf --standard=WordPress-Core --extensions=php --ignore=vendor,node_modules,*.min.js,*.min.css,*.zip,test-*.php,*backup*.php,webhook-logger.php --runtime-set text_domain coinsub . || true
+        
+    - name: Run PHPCS (Report remaining issues)
       working-directory: ${{ github.workspace }}
       continue-on-error: true
       run: |
-        echo "Running WordPress Coding Standards check (WordPress-Core standard)..."
-        echo "Excluding test files and backups..."
+        echo "Checking for remaining violations..."
         $HOME/.composer/vendor/bin/phpcs --standard=WordPress-Core --report=summary --extensions=php --ignore=vendor,node_modules,*.min.js,*.min.css,*.zip,test-*.php,*backup*.php,webhook-logger.php --runtime-set text_domain coinsub . || true
-        echo ""
-        echo "💡 Note: 19,982 violations can be auto-fixed. This is a report only - doesn't block pushes."
+        
+    - name: Commit auto-fixed changes
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git diff --quiet && git diff --staged --quiet || (git add -A && git commit -m "Auto-fix: WordPress coding standards (PHPCBF)" && git push)
 
