@@ -8,171 +8,230 @@ Stable tag: 1.0.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Accept cryptocurrency payments in your WooCommerce store with Coinsub. Simple, secure crypto payments.
+Accept cryptocurrency payments in your WooCommerce store. Simple setup, automatic confirmations, secure transactions.
 
 == Description ==
 
-Coinsub for WooCommerce allows you to accept cryptocurrency payments directly in your WooCommerce store. Customers can pay with various cryptocurrencies including USDC, USDT, ETH, and more.
+**Accept cryptocurrency payments in your WooCommerce store with zero complexity.**
 
-= Features =
+Coinsub for WooCommerce enables you to accept cryptocurrency payments from customers worldwide. No blockchain knowledge required - just install, connect your Coinsub account, and start accepting crypto.
 
-* **Easy Setup** - Configure in minutes with your Coinsub merchant credentials
-* **Multiple Cryptocurrencies** - Accept USDC, USDT, ETH, BTC, and other major cryptocurrencies
-* **Automatic Order Updates** - Orders update automatically when payments are confirmed
-* **Secure** - All payments are processed securely through the Coinsub payment network
-* **Subscription Support** - Accept recurring crypto payments for subscription products
-* **Refunds** - Process refunds directly from WooCommerce admin
-* **Real-time Notifications** - Webhook integration for instant payment confirmations
+= Why Coinsub? =
+
+* **Simple Setup** - Get started in under 5 minutes
+* **Multiple Cryptocurrencies** - Accept USDC, USDT, ETH, and other major cryptocurrencies
+* **Automatic Confirmations** - Orders update automatically when blockchain payment is confirmed
+* **Recurring Payments** - Full support for subscription products with crypto payments
+* **Easy Refunds** - Process refunds directly from your WooCommerce admin panel
+* **Secure** - Your customers' crypto payments are processed securely on the blockchain
+* **No Chargebacks** - Crypto payments are final and irreversible
 
 = How It Works =
 
-1. Customer adds products to cart
-2. Selects cryptocurrency payment at checkout
-3. Redirected to secure crypto payment page
-4. Pays with their crypto wallet
-5. Order automatically confirmed when payment is received
+1. **Customer Shops** - Customer adds products to cart and proceeds to checkout
+2. **Selects Crypto Payment** - Customer chooses "Coinsub" as payment method
+3. **Pays with Crypto** - Customer is shown a secure payment page to complete payment with their wallet
+4. **Instant Confirmation** - Once payment is confirmed on the blockchain, the order is automatically marked as paid
+5. **Order Fulfillment** - You receive the order and can fulfill it immediately
 
-= Requirements =
+= What You Need =
 
-* WooCommerce 5.0 or higher
-* A Coinsub merchant account (sign up at coinsub.io)
-* SSL certificate (HTTPS) required
+* WooCommerce 5.0 or higher installed and activated
+* A free Coinsub merchant account - [Sign up at coinsub.io](https://coinsub.io)
+* SSL certificate (HTTPS) on your website (required for secure payments)
 
-= External Services =
+= Third-Party Service Disclosure =
 
-This plugin connects to the Coinsub payment processing service to handle cryptocurrency transactions.
+**This plugin uses the Coinsub payment processing service to handle cryptocurrency transactions.**
 
-**What data is sent to Coinsub:**
+When a customer selects Coinsub as their payment method, the following data is sent to Coinsub's servers:
+
+**Data Sent to Coinsub:**
+* Customer name (first and last name)
 * Order amount and currency
-* Order ID and customer email
-* Customer wallet addresses (during payment)
-* Transaction details for payment processing
+* Order ID (for reference)
+* Customer email address
+* Customer's cryptocurrency wallet address (provided by customer during payment)
 
-**When data is sent:**
-* When a customer selects Coinsub as their payment method at checkout
-* When payment confirmations are received via webhook
+**When Data is Sent:**
+* When customer clicks "Place Order" at checkout
+* When payment status updates are received
 * When refunds are processed
 
+**No Sensitive Data Stored:**
+This plugin does NOT store or have access to:
+* Cryptocurrency private keys
+* Wallet seed phrases
+* Customer payment credentials
+
 **User Consent:**
-By installing and activating this plugin, merchants consent to using the Coinsub payment service. Customers provide consent by selecting Coinsub as their payment method at checkout.
+* **Merchants:** By installing this plugin, you consent to using Coinsub's payment service
+* **Customers:** By selecting Coinsub at checkout, customers consent to Coinsub processing their payment
 
-**Coinsub Service:**
-* Service URL: https://coinsub.io
-* API Documentation: https://docs.coinsub.io/coinsub-ecosystem/for-developers
-* Terms of Service: https://coinsub.io/tos
-* Privacy Policy: https://coinsub.io/contact
-* Contact: https://coinsub.io/contact
+**Coinsub Service Information:**
+* Website: [https://coinsub.io](https://coinsub.io)
+* Developer Docs: [https://docs.coinsub.io/coinsub-ecosystem/for-developers](https://docs.coinsub.io/coinsub-ecosystem/for-developers)
+* Terms of Service: [https://coinsub.io/tos](https://coinsub.io/tos)
+* Contact/Support: [https://coinsub.io/contact](https://coinsub.io/contact)
 
-For more information about how Coinsub processes data, please review their Terms of Service and Privacy Policy.
+By using this plugin, you agree to Coinsub's Terms of Service. For questions about how Coinsub handles data, please contact them directly.
 
 == Installation ==
 
-= Automatic Installation =
+= Quick Install (Recommended) =
 
-1. Log in to your WordPress admin panel
-2. Go to Plugins → Add New
-3. Search for "Coinsub"
-4. Click "Install Now" and then "Activate"
+1. Log in to your WordPress admin dashboard
+2. Navigate to **Plugins → Add New**
+3. Search for **"Coinsub"**
+4. Click **Install Now**, then **Activate**
+5. Go to **WooCommerce → Settings → Payments**
+6. Click on **Coinsub** and configure your settings
 
 = Manual Installation =
 
 1. Download the plugin ZIP file
-2. Go to Plugins → Add New → Upload Plugin
-3. Choose the ZIP file and click "Install Now"
-4. Activate the plugin
+2. Go to **Plugins → Add New → Upload Plugin**
+3. Choose the downloaded ZIP file
+4. Click **Install Now**, then **Activate**
 
-= Configuration =
+= Configuration Steps =
 
-1. Go to WooCommerce → Settings → Payments
-2. Click on "Coinsub" to configure
-3. Enter your Merchant ID and API Key from your Coinsub dashboard
-4. Copy the Webhook URL and add it to your Coinsub dashboard settings
-5. Enable the payment method and save changes
+After activating the plugin:
+
+1. Go to **WooCommerce → Settings → Payments**
+2. Click **Coinsub** (or click "Set up" if it's your first time)
+3. **Enable** the payment method by checking the box at the top
+4. Enter your **Merchant ID** (found in your Coinsub dashboard)
+5. Enter your **API Key** (found in your Coinsub dashboard)
+6. Copy the **Webhook URL** shown in the settings
+7. Log in to your Coinsub merchant dashboard and add the webhook URL
+8. Click **Save changes**
+
+**Done!** Coinsub will now appear as a payment option at checkout.
 
 == Frequently Asked Questions ==
 
 = Do I need a Coinsub account? =
 
-Yes, you need a Coinsub merchant account to accept crypto payments. Sign up at coinsub.io.
+Yes. You need a free Coinsub merchant account to accept cryptocurrency payments. [Sign up here](https://coinsub.io).
 
-= What cryptocurrencies can I accept? =
+The specific cryptocurrencies available to your customers are configured in your Coinsub merchant dashboard.
 
-You can accept USDC, USDT, ETH, BTC, and other major cryptocurrencies. The available options are configured in your Coinsub merchant dashboard.
+= Are there any fees? =
 
-= Are there any transaction fees? =
-
-Transaction fees are determined by your Coinsub merchant agreement. Please refer to your Coinsub dashboard for fee details.
+Transaction fees are determined by your Coinsub merchant agreement. Please check your Coinsub dashboard or contact Coinsub support for fee information.
 
 = How do refunds work? =
 
-Refunds are processed in USDC on the Polygon network directly from your WooCommerce admin. You'll need USDC in your merchant wallet to process refunds.
+Refunds are processed in USDC on the Polygon blockchain. To issue a refund:
 
-= Is this compatible with WooCommerce Subscriptions? =
+1. Go to the WooCommerce order
+2. Click **Refund**
+3. Enter the refund amount
+4. Click **Refund via Coinsub**
 
-Yes! Coinsub has built-in support for recurring cryptocurrency payments. Simply enable subscription settings on your products.
+**Note:** You must have sufficient USDC in your Coinsub merchant wallet to process refunds.
 
-= What happens if a payment fails? =
+= Does this work with WooCommerce Subscriptions? =
 
-If a payment fails or is cancelled, the order status will be updated automatically and the customer will be notified.
+Yes! Coinsub has full support for recurring cryptocurrency payments. When you sell subscription products, customers can pay with crypto and renewals are handled automatically.
 
-= Do I need technical knowledge to set this up? =
+= What if a payment fails? =
 
-No! The plugin is designed for easy setup. Just enter your API credentials and webhook URL - no coding required.
+If a customer's payment fails or they cancel the payment:
+* The order remains in "Pending Payment" status
+* The customer can try again by visiting the order pay page
+* You and the customer will be notified of the payment status
+
+= Is this secure? =
+
+Yes. All payments are processed securely on the blockchain through Coinsub's payment infrastructure. This plugin never handles or stores private keys or sensitive wallet information.
+
+= Do I need coding skills to use this? =
+
+No! The plugin is designed for non-technical users. Simply enter your API credentials in the settings - no coding required.
+
+= Where can I get help? =
+
+* **Documentation:** [https://docs.coinsub.io/coinsub-ecosystem/for-developers](https://docs.coinsub.io/coinsub-ecosystem/for-developers)
+* **Support:** [https://coinsub.io/contact](https://coinsub.io/contact)
+* **GitHub:** [https://github.com/demetrigeras/Coinsub-Woocommerce-Plugin](https://github.com/demetrigeras/Coinsub-Woocommerce-Plugin)
 
 == Screenshots ==
 
-1. Payment gateway settings page
-2. Checkout page with Coinsub payment option
-3. Crypto payment page
-4. Order details showing crypto transaction
-5. Subscription management page
+1. Coinsub payment gateway settings page in WooCommerce admin
+2. Coinsub payment option at checkout
+3. Secure cryptocurrency payment page
+4. Order details showing confirmed crypto transaction
+5. Admin subscription management page
+6. Payment logs for debugging
 
 == Changelog ==
 
-= 1.0.0 =
-* Initial release
-* Cryptocurrency payment processing
-* Automatic order updates via webhook
-* Subscription support for recurring payments
-* Refund support
-* Admin payment and subscription management pages
-* Debug logging for troubleshooting
+= 1.0.0 - 2024-01-15 =
+**Initial Release**
+* Cryptocurrency payment gateway for WooCommerce
+* Support for USDC, USDT, ETH, and other major cryptocurrencies
+* Automatic order updates via webhook integration
+* Full support for WooCommerce Subscriptions (recurring crypto payments)
+* Refund processing from WooCommerce admin
+* Admin pages for payment and subscription management
+* Debug logging for easy troubleshooting
+* Secure API integration with Coinsub payment service
 
 == Upgrade Notice ==
 
 = 1.0.0 =
-Initial release of Coinsub for WooCommerce.
+Welcome to Coinsub for WooCommerce! This is the initial release. Install, configure your API credentials, and start accepting cryptocurrency payments.
 
-== Privacy ==
+== Privacy & Data Handling ==
 
-This plugin connects to the Coinsub external service to process cryptocurrency payments. When you use this plugin:
+**What This Plugin Does:**
 
-**Data Sent to Coinsub:**
-* Order amount and currency
-* Order ID and customer email
-* Product details
-* Merchant ID and API credentials
+This plugin integrates WooCommerce with the Coinsub cryptocurrency payment service. When a customer chooses to pay with crypto, their order information is sent to Coinsub to process the payment.
 
-**Data Received from Coinsub:**
-* Payment confirmation status
-* Transaction hash
-* Payment timestamp
-* Subscription agreement IDs (for recurring payments)
+**Data Sent to External Service:**
 
-**Data Storage:**
-* Transaction hashes are stored in order meta data
-* API credentials are stored in WordPress options table
-* Subscription IDs are stored in order meta data
+When you use this plugin, the following data is transmitted to Coinsub's servers:
 
-No customer payment information (wallet addresses, private keys) is ever stored or handled by this plugin.
+* **Order Information:** Amount, currency, order ID
+* **Customer Information:** Name, email address
+* **Payment Information:** Cryptocurrency wallet address (provided by customer)
 
-For more information, please review:
-* Coinsub Terms of Service: https://coinsub.io/tos
-* Contact Coinsub: https://coinsub.io/contact
+**Data Stored Locally:**
+
+This plugin stores the following in your WordPress database:
+
+* **Settings:** API credentials, merchant ID, webhook secret
+* **Order Meta:** Transaction hashes, payment status, subscription IDs
+* **Logs:** Payment events for debugging (optional, can be disabled)
+
+**What is NOT Stored:**
+
+* Cryptocurrency private keys (never accessed or stored)
+* Wallet seed phrases (never accessed or stored)
+* Customer payment credentials (never accessed or stored)
+
+**Cookies:**
+
+This plugin does not set any cookies.
+
+**Third-Party Service:**
+
+Payments are processed by Coinsub, a third-party service. By using this plugin, you acknowledge that customer payment data will be transmitted to Coinsub for processing.
+
+For details on how Coinsub handles data:
+* Terms of Service: [https://coinsub.io/tos](https://coinsub.io/tos)
+* Contact: [https://coinsub.io/contact](https://coinsub.io/contact)
+
+**GDPR Compliance:**
+
+Merchants are responsible for adding appropriate privacy policy disclosures to their website regarding the use of cryptocurrency payment processing. This plugin provides suggested privacy policy text via WordPress → Settings → Privacy to help you comply.
 
 == Support ==
 
-For plugin support, please visit:
-* Documentation: https://docs.coinsub.io/coinsub-ecosystem/for-developers
-* Contact: https://coinsub.io/contact
-* GitHub: https://github.com/demetrigeras/Coinsub-Woocommerce-Plugin
+Need help? We're here for you:
+
+* **Plugin Documentation:** [https://docs.coinsub.io/coinsub-ecosystem/for-developers](https://docs.coinsub.io/coinsub-ecosystem/for-developers)
+* **Contact Support:** [https://coinsub.io/contact](https://coinsub.io/contact)
+* **Report Issues:** [https://github.com/demetrigeras/Coinsub-Woocommerce-Plugin](https://github.com/demetrigeras/Coinsub-Woocommerce-Plugin)
