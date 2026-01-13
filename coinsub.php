@@ -42,6 +42,41 @@ function coinsub_woocommerce_missing_notice() {
 }
 
 /**
+ * Add privacy policy content
+ */
+function coinsub_add_privacy_policy_content() {
+	if ( ! function_exists( 'wp_add_privacy_policy_content' ) ) {
+		return;
+	}
+
+	$content = sprintf(
+		'<h2>%s</h2><p>%s</p><h3>%s</h3><ul><li>%s</li><li>%s</li><li>%s</li><li>%s</li></ul><h3>%s</h3><p>%s</p><p>%s</p>',
+		__( 'Cryptocurrency Payments via Coinsub', 'coinsub' ),
+		__( 'When you select Coinsub as a payment method, your payment and order information is processed by Coinsub, a third-party cryptocurrency payment processor.', 'coinsub' ),
+		__( 'What information is shared with Coinsub:', 'coinsub' ),
+		__( 'Order amount and currency', 'coinsub' ),
+		__( 'Order ID and email address', 'coinsub' ),
+		__( 'Your cryptocurrency wallet address (when making payment)', 'coinsub' ),
+		__( 'Transaction details necessary for payment processing', 'coinsub' ),
+		__( 'Third-Party Service', 'coinsub' ),
+		__( 'Coinsub is a third-party service provider. By choosing to pay with Coinsub, you agree to their Terms of Service and Privacy Policy.', 'coinsub' ),
+		sprintf(
+			'<a href="%s" target="_blank">%s</a> | <a href="%s" target="_blank">%s</a>',
+			'https://coinsub.io/tos',
+			__( 'Coinsub Terms of Service', 'coinsub' ),
+			'https://coinsub.io/contact',
+			__( 'Coinsub Privacy Policy', 'coinsub' )
+		)
+	);
+
+	wp_add_privacy_policy_content(
+		'Coinsub',
+		wp_kses_post( wpautop( $content, false ) )
+	);
+}
+add_action( 'admin_init', 'coinsub_add_privacy_policy_content' );
+
+/**
  * Initialize the plugin
  */
 function coinsub_commerce_init() {
@@ -61,7 +96,6 @@ function coinsub_commerce_init() {
 	require_once COINSUB_PLUGIN_DIR . 'includes/class-coinsub-subscriptions.php';
 	require_once COINSUB_PLUGIN_DIR . 'includes/class-coinsub-admin-subscriptions.php';
 	require_once COINSUB_PLUGIN_DIR . 'includes/class-coinsub-admin-payments.php';
-	require_once COINSUB_PLUGIN_DIR . 'includes/class-coinsub-review-page.php';
 
 	// Register custom order status
 
@@ -80,9 +114,6 @@ function coinsub_commerce_init() {
 	if ( is_admin() ) {
 		new CoinSub_Admin_Logs();
 	}
-
-	// Initialize review/brand explainer page
-	new CoinSub_Review_Page();
 
 	// Force traditional checkout template (not block-based)
 	add_action( 'template_redirect', 'coinsub_force_traditional_checkout' );
@@ -156,14 +187,6 @@ function coinsub_add_gateway_class( $methods ) {
 /**
  * Plugin activation
  */
-function coinsub_register_review_rewrite_rule() {
-	add_rewrite_rule(
-		'^coinsub-review/?$',
-		'index.php?coinsub_review=1',
-		'top'
-	);
-}
-
 function coinsub_commerce_activate() {
 	// Add rewrite rules for webhook endpoint
 	add_rewrite_rule(
@@ -171,9 +194,6 @@ function coinsub_commerce_activate() {
 		'index.php?coinsub_webhook=1',
 		'top'
 	);
-
-	// Add rewrite for the review/branding explainer page
-	coinsub_register_review_rewrite_rule();
 
 	// Flush rewrite rules
 	flush_rewrite_rules();

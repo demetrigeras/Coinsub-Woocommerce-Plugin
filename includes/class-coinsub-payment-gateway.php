@@ -12,11 +12,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 
 	private $api_client;
-	private $brand_company       = ''; // No default - will be set from branding API
+	private $brand_company       = 'Coinsub';
 	private $button_logo_url     = ''; // Logo URL for button (injected via JS)
-	private $button_company_name = ''; // Company name for button
-	private $checkout_title      = ''; // Title for checkout only (not admin)
-	private $checkout_icon       = ''; // Icon for checkout only (not admin)
+	private $button_company_name = 'Coinsub';
+	private $checkout_title      = 'Pay with Coinsub';
+	private $checkout_icon       = ''; // Icon for checkout
 
 	/**
 	 * Constructor
@@ -48,7 +48,7 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 		$this->init_form_fields();
 		$this->init_settings();
 
-		// Set default title and branding
+		// Set default title
 		$this->title       = 'Pay with Coinsub';
 		$this->description = '';
 		$this->enabled     = $this->get_option( 'enabled', 'yes' );
@@ -56,7 +56,7 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 		// Initialize API client
 		$this->api_client = new CoinSub_API_Client();
 
-		// Set default branding (no white-label)
+		// Set default Coinsub branding
 		$this->checkout_title      = 'Pay with Coinsub';
 		$this->checkout_icon       = COINSUB_PLUGIN_URL . 'images/coinsub.svg';
 		$this->button_logo_url     = COINSUB_PLUGIN_URL . 'images/coinsub.svg';

@@ -18,7 +18,7 @@ delete_option( 'coinsub_webhook_secret' );
 delete_option( 'coinsub_recommendations_dismissed' );
 
 // Delete transients
-delete_transient( 'coinsub_refresh_branding_on_load' );
+// (No transients to delete)
 
 // Clean up order meta data (optional - comment out if you want to preserve order history)
 global $wpdb;

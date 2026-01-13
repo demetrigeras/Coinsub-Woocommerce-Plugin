@@ -31,8 +31,6 @@ Accept cryptocurrency payments in your WooCommerce store with Coinsub.
 - **Title** - What customers see at checkout (default: "Coinsub")
 - **Description** - Payment method description
 
-**Note:** The plugin automatically applies white-label branding based on your merchant credentials. The checkout will display your white-label company name and logo.
-
 ---
 
 ## 💰 How It Works
@@ -40,9 +38,9 @@ Accept cryptocurrency payments in your WooCommerce store with Coinsub.
 ### **Customer Flow:**
 1. Customer adds products to cart
 2. Proceeds to checkout
-3. Selects "Coinsub" (or white-label name) payment method
+3. Selects "Coinsub" payment method
 4. Clicks "Place Order"
-5. Redirected to crypto checkout page (white-labeled)
+5. Redirected to secure Coinsub crypto checkout page
 6. Pays with crypto wallet
 7. Payment confirmed automatically
 
@@ -160,11 +158,6 @@ coinsub/
 - Check API credentials
 - Check merchant ID matches
 
-**White-label branding not showing?**
-- Ensure Merchant ID and API Key are saved in settings
-- Click "Save changes" to trigger branding fetch
-- Check that your merchant account has white-label branding configured
-
 ---
 
 ## 🆘 Support
@@ -190,17 +183,12 @@ coinsub/
 **IN:**
 - Reads WooCommerce order data (products, shipping, tax, discounts, fees)
 - Creates Coinsub checkout session
-- Generates crypto payment URL (white-labeled if configured)
+- Generates secure crypto payment URL
 
 **OUT:**
 - Receives webhook when payment succeeds
 - Updates WooCommerce order status
 - Stores transaction hash
-
-**White-Label Support:**
-- Automatically applies white-label branding based on merchant credentials
-- Displays white-label company name and logo at checkout
-- Works with parent white-labelers and their sub-merchants
 
 **That's it!** Simple payments plugin. WooCommerce handles everything else (cart, shipping, taxes, inventory, emails).
 

@@ -40,19 +40,30 @@ Coinsub for WooCommerce allows you to accept cryptocurrency payments directly in
 
 = External Services =
 
-This plugin connects to the Coinsub payment processing service to handle cryptocurrency transactions. When a customer makes a payment:
+This plugin connects to the Coinsub payment processing service to handle cryptocurrency transactions.
 
-* Order data (amount, currency, order ID) is sent to Coinsub API
-* Customer is redirected to Coinsub's secure payment page
-* Payment confirmations are received via webhook
+**What data is sent to Coinsub:**
+* Order amount and currency
+* Order ID and customer email
+* Customer wallet addresses (during payment)
+* Transaction details for payment processing
+
+**When data is sent:**
+* When a customer selects Coinsub as their payment method at checkout
+* When payment confirmations are received via webhook
+* When refunds are processed
+
+**User Consent:**
+By installing and activating this plugin, merchants consent to using the Coinsub payment service. Customers provide consent by selecting Coinsub as their payment method at checkout.
 
 **Coinsub Service:**
 * Service URL: https://coinsub.io
 * API Documentation: https://docs.coinsub.io/coinsub-ecosystem/for-developers
 * Terms of Service: https://coinsub.io/tos
+* Privacy Policy: https://coinsub.io/contact
 * Contact: https://coinsub.io/contact
 
-By using this plugin, you agree to Coinsub's terms of service.
+For more information about how Coinsub processes data, please review their Terms of Service and Privacy Policy.
 
 == Installation ==
 
