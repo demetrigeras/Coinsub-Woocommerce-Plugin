@@ -534,9 +534,56 @@ class CoinSub_Webhook_Handler {
 			}
 		}
 
-		// Store token symbol if available
-		if ( isset( $transaction_details['token_symbol'] ) ) {
+		// Store token symbol from currency field (primary location)
+		if ( isset( $data['currency'] ) ) {
+			$order->update_meta_data( '_coinsub_token_symbol', $data['currency'] );
+			error_log( '💎 CoinSub Webhook - Stored token_symbol from currency: ' . $data['currency'] );
+		} elseif ( isset( $transaction_details['currency'] ) ) {
+			$order->update_meta_data( '_coinsub_token_symbol', $transaction_details['currency'] );
+			error_log( '💎 CoinSub Webhook - Stored token_symbol from transaction_details.currency: ' . $transaction_details['currency'] );
+		} elseif ( isset( $transaction_details['token_symbol'] ) ) {
 			$order->update_meta_data( '_coinsub_token_symbol', $transaction_details['token_symbol'] );
+			error_log( '💎 CoinSub Webhook - Stored token_symbol from transaction_details: ' . $transaction_details['token_symbol'] );
+		} elseif ( isset( $data['token_symbol'] ) ) {
+			$order->update_meta_data( '_coinsub_token_symbol', $data['token_symbol'] );
+			error_log( '💎 CoinSub Webhook - Stored token_symbol from top level: ' . $data['token_symbol'] );
+		} else {
+			error_log( '⚠️ CoinSub Webhook - Token symbol not found in webhook payload' );
+		}
+
+		// Store user email from webhook if available
+		if ( isset( $data['user']['email'] ) ) {
+			$webhook_email = $data['user']['email'];
+			$order->update_meta_data( '_coinsub_user_email', $webhook_email );
+			error_log( '📧 CoinSub Webhook - Stored user email from webhook: ' . $webhook_email );
+
+			// Update billing email if not set
+			if ( empty( $order->get_billing_email() ) ) {
+				$order->set_billing_email( $webhook_email );
+				error_log( '📧 CoinSub Webhook - Set billing email to: ' . $webhook_email );
+			}
+		}
+
+		// Store user ID from webhook if available
+		if ( isset( $data['user']['subscriber_id'] ) ) {
+			$order->update_meta_data( '_coinsub_subscriber_id', $data['user']['subscriber_id'] );
+			error_log( '🆔 CoinSub Webhook - Stored subscriber_id: ' . $data['user']['subscriber_id'] );
+		}
+
+		// Store user name from webhook if available
+		if ( isset( $data['user']['first_name'] ) && isset( $data['user']['last_name'] ) ) {
+			$first_name = $data['user']['first_name'];
+			$last_name  = $data['user']['last_name'];
+			$order->update_meta_data( '_coinsub_user_first_name', $first_name );
+			$order->update_meta_data( '_coinsub_user_last_name', $last_name );
+			error_log( '👤 CoinSub Webhook - Stored user name: ' . $first_name . ' ' . $last_name );
+
+			// Update billing name if not set
+			if ( empty( $order->get_billing_first_name() ) ) {
+				$order->set_billing_first_name( $first_name );
+				$order->set_billing_last_name( $last_name );
+				error_log( '👤 CoinSub Webhook - Set billing name' );
+			}
 		}
 
 		$order->save();

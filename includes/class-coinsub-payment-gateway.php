@@ -349,6 +349,11 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 				'custom_attributes' => array( 'readonly' => 'readonly' ),
 				'css'               => 'background: #f0f0f0;',
 			),
+			'refund_disclaimer' => array(
+				'title'       => __( '⚠️ Refund Requirements & Limitations', 'coinsub' ),
+				'type'        => 'title',
+				'description' => '<div style="background:#fff3cd;border-left:4px solid #ffc107;padding:15px;margin:10px 0;"><strong style="display:block;margin-bottom:10px;color:#856404;">Important Refund Disclaimer:</strong><ul style="margin:5px 0;padding-left:20px;color:#856404;"><li><strong>Refunds are only available for customers who paid using Coinsub wallets.</strong></li><li>Your merchant account must have refund capabilities enabled.</li><li>Refunds are processed as <strong>USDC on the Polygon network</strong>.</li><li>Customers must have a compatible wallet to receive refunds.</li></ul><p style="margin:10px 0 0 0;color:#856404;"><strong>⚠️ Before processing refunds:</strong> Verify that the customer\'s payment method supports refunds and that your merchant account has refund functionality enabled. Contact support if you\'re unsure.</p></div>',
+			),
 
 		);
 	}
@@ -945,21 +950,72 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 			return new WP_Error( 'missing_customer_data', __( 'Customer email or wallet address not found. Manual refund required.', 'coinsub' ) );
 		}
 
-		// ALL refunds use USDC on Polygon Amoy Testnet (chain_id 80002) for testing
-		$chain_id     = '80002'; // Polygon Amoy Testnet
-		$token_symbol = 'USDC';
+		// Initialize API client
+		$api_client = new CoinSub_API_Client();
 
-		error_log( '🔄 CoinSub Refund - Using standardized refund: USDC on Polygon Amoy Testnet (chain_id: 80002)' );
-		error_log( '🔄 CoinSub Refund - Original payment may have been on different chain/token, but refund will be USDC Polygon Amoy' );
+		// Strategy 1: Try to get chain_id and token_symbol from webhook data (stored in order meta)
+		$chain_id     = $order->get_meta( '_coinsub_chain_id' );
+		$token_symbol = $order->get_meta( '_coinsub_token_symbol' );
+
+		error_log( '🔄 CoinSub Refund - Chain ID from webhook: ' . ( $chain_id ?: 'NOT FOUND' ) );
+		error_log( '🔄 CoinSub Refund - Token symbol from webhook: ' . ( $token_symbol ?: 'NOT FOUND' ) );
+
+		// Strategy 2: If not available, try to fetch from payments API using payment_id
+		if ( empty( $chain_id ) || empty( $token_symbol ) ) {
+			$payment_id = $order->get_meta( '_coinsub_payment_id' );
+
+			if ( ! empty( $payment_id ) ) {
+				error_log( '🔄 CoinSub Refund - Fetching payment details from API for payment_id: ' . $payment_id );
+
+				$payment_details = $api_client->get_payment_details( $payment_id );
+
+				if ( ! is_wp_error( $payment_details ) && isset( $payment_details['data'] ) ) {
+					$payment_data = $payment_details['data'];
+
+					// Extract chain_id and token from payment details
+					if ( ! empty( $payment_data['chain_id'] ) ) {
+						$chain_id = $payment_data['chain_id'];
+						error_log( '✅ CoinSub Refund - Got chain_id from API: ' . $chain_id );
+					} elseif ( ! empty( $payment_data['network_id'] ) ) {
+						$chain_id = $payment_data['network_id'];
+						error_log( '✅ CoinSub Refund - Got network_id from API: ' . $chain_id );
+					}
+
+					// Token symbol is in the 'currency' field
+					if ( ! empty( $payment_data['currency'] ) ) {
+						$token_symbol = $payment_data['currency'];
+						error_log( '✅ CoinSub Refund - Got currency from API: ' . $token_symbol );
+					} elseif ( ! empty( $payment_data['token_symbol'] ) ) {
+						$token_symbol = $payment_data['token_symbol'];
+						error_log( '✅ CoinSub Refund - Got token_symbol from API: ' . $token_symbol );
+					} elseif ( ! empty( $payment_data['token'] ) ) {
+						$token_symbol = $payment_data['token'];
+						error_log( '✅ CoinSub Refund - Got token from API: ' . $token_symbol );
+					}
+				} else {
+					error_log( '⚠️ CoinSub Refund - Failed to fetch payment details from API' );
+				}
+			}
+		}
+
+		// Strategy 3: Fallback to Polygon mainnet and USDC if still not available
+		if ( empty( $chain_id ) ) {
+			$chain_id = '137'; // Polygon mainnet (production)
+			error_log( '⚠️ CoinSub Refund - Using fallback chain_id: ' . $chain_id . ' (Polygon mainnet)' );
+		}
+
+		if ( empty( $token_symbol ) ) {
+			$token_symbol = 'USDC'; // Default to USDC
+			error_log( '⚠️ CoinSub Refund - Using fallback token_symbol: ' . $token_symbol );
+		}
+
+		error_log( '🔄 CoinSub Refund - Final refund details:' );
+		error_log( '🔄 CoinSub Refund - Chain ID: ' . $chain_id . ' (' . $this->get_network_name( $chain_id ) . ')' );
+		error_log( '🔄 CoinSub Refund - Token: ' . $token_symbol );
 
 		error_log( '🔄 CoinSub Refund - Processing automatic refund for order #' . $order_id );
 		error_log( '🔄 CoinSub Refund - Amount: ' . $amount );
 		error_log( '🔄 CoinSub Refund - To Address (email/wallet): ' . $to_address );
-		error_log( '🔄 CoinSub Refund - Chain ID: ' . $chain_id );
-		error_log( '🔄 CoinSub Refund - Token: ' . $token_symbol );
-
-		// Initialize API client
-		$api_client = new CoinSub_API_Client();
 
 		error_log( '🔄 CoinSub Refund - About to call refund API...' );
 
@@ -983,29 +1039,32 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 			if ( strpos( strtolower( $error_message ), 'insufficient' ) !== false ||
 				strpos( strtolower( $error_message ), 'balance' ) !== false ) {
 
+				$network_name = $this->get_network_name( $chain_id );
+
 				$insufficient_funds_note = sprintf(
-					__( 'REFUND FAILED - INSUFFICIENT FUNDS: %1$s. Reason: %2$s. Error: %3$s', 'coinsub' ),
+					__( 'REFUND FAILED - INSUFFICIENT FUNDS: %1$s. Reason: %2$s. Network: %3$s. Token: %4$s. Error: %5$s', 'coinsub' ),
 					wc_price( $amount ),
 					$reason,
+					$network_name,
+					$token_symbol,
 					$error_message
 				);
 
 				$coinsub_settings_url = admin_url( 'admin.php?page=wc-settings&tab=checkout&section=coinsub' );
 
-				$insufficient_funds_note .= '<br><br><strong>🔧 Action Required - Add USDC to Polygon:</strong><br>';
-				$insufficient_funds_note .= 'You need ' . $amount . ' USDC on Polygon to process this refund.<br><br>';
+				$insufficient_funds_note .= '<br><br><strong>🔧 Action Required - Add Funds:</strong><br>';
+				$insufficient_funds_note .= 'You need ' . $amount . ' ' . $token_symbol . ' on ' . $network_name . ' to process this refund.<br><br>';
 
 				$insufficient_funds_note .= '<strong>To add funds:</strong><br>';
 				$insufficient_funds_note .= '1. Go to <strong>WooCommerce → Settings → Payments → CoinSub</strong><br>';
 				$insufficient_funds_note .= '2. Click <strong>"Manage"</strong> or scroll down<br>';
-				$insufficient_funds_note .= '3. Click the <strong>"Onramp USDC Polygon via Meld"</strong> button<br>';
-				$insufficient_funds_note .= '4. Complete the onramp process<br>';
-				$insufficient_funds_note .= '5. Retry the refund once funds are available<br><br>';
+				$insufficient_funds_note .= '3. Use the onramp button or send ' . $token_symbol . ' to your merchant wallet on ' . $network_name . '<br>';
+				$insufficient_funds_note .= '4. Retry the refund once funds are available<br><br>';
 
-				$insufficient_funds_note .= '<a href="' . esc_url( $coinsub_settings_url ) . '" class="button button-primary" style="background: #0284c7; border-color: #0284c7;">Go to Payment ProviderSettings</a>';
+				$insufficient_funds_note .= '<a href="' . esc_url( $coinsub_settings_url ) . '" class="button button-primary" style="background: #0284c7; border-color: #0284c7;">Go to Payment Settings</a>';
 
 				$order->add_order_note( $insufficient_funds_note );
-				$order->update_status( 'refund-pending', __( 'Refund pending - insufficient funds. Please add USDC to Polygon wallet.', 'coinsub' ) );
+				$order->update_status( 'refund-pending', __( 'Refund pending - insufficient funds. Please add tokens to your merchant wallet.', 'coinsub' ) );
 
 				error_log( '❌ CoinSub Refund - Insufficient funds: ' . $error_message );
 				return new WP_Error( 'insufficient_funds', $error_message );
@@ -1039,38 +1098,33 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 		error_log( '✅ CoinSub Refund - API response received: ' . json_encode( $refund_result ) );
 
 		// Success - add order note and update status
-		$refund_id        = $refund_result['refund_id'] ?? $refund_result['transfer_id'] ?? 'N/A';
-		$transaction_hash = $refund_result['transaction_hash'] ?? $refund_result['hash'] ?? 'N/A';
+		$refund_id = $refund_result['refund_id'] ?? $refund_result['transfer_id'] ?? 'N/A';
 
-		// Note: All refunds are processed as USDC on Polygon regardless of original payment method
+		// Get network name for display
+		$network_name = $this->get_network_name( $chain_id );
+
+		// Create refund note
 		$refund_note = sprintf(
-			__( 'REFUND INITIATED: %1$s. Reason: %2$s. Customer wallet: %3$s. Refund ID: %4$s. Refund will be sent as USDC on Polygon (widely accepted). Refund initiated via CoinSub API. Waiting for transfer confirmation...', 'coinsub' ),
+			__( 'REFUND INITIATED: %1$s. Reason: %2$s. Recipient: %3$s. Refund ID: %4$s. Network: %5$s. Token: %6$s. Waiting for transfer confirmation...', 'coinsub' ),
 			wc_price( $amount ),
 			$reason,
-			$customer_wallet ?: $to_address,
-			$refund_id
+			$customer_email ?: $customer_wallet,
+			$refund_id,
+			$network_name,
+			$token_symbol
 		);
-
-		// Add warning if original payment was on different chain/token
-		$original_chain_id = $order->get_meta( '_coinsub_chain_id' );
-		$original_token    = $order->get_meta( '_coinsub_token_symbol' );
-		if ( $original_chain_id && $original_chain_id !== '80002' ) {
-			$refund_note .= '<br><br><strong>ℹ️ Note:</strong> Original payment was on a different chain/token, but refund will be processed as USDC on Polygon Amoy Testnet for simplicity and wide acceptance.';
-		}
 
 		$order->add_order_note( $refund_note );
 
 		// Store refund details and mark as pending
 		$order->update_meta_data( '_coinsub_refund_pending', 'yes' );
 		$order->update_meta_data( '_coinsub_refund_status', 'pending' );
+		$order->update_meta_data( '_coinsub_refund_chain_id', $chain_id );
+		$order->update_meta_data( '_coinsub_refund_token_symbol', $token_symbol );
 
 		if ( ! empty( $refund_id ) ) {
 			$order->update_meta_data( '_coinsub_refund_id', $refund_id );
 			error_log( '✅ CoinSub Refund - Stored refund ID: ' . $refund_id );
-		}
-		if ( ! empty( $transaction_hash ) && $transaction_hash !== 'N/A' ) {
-			$order->update_meta_data( '_coinsub_refund_transaction_hash', $transaction_hash );
-			error_log( '✅ CoinSub Refund - Stored transaction hash: ' . $transaction_hash );
 		}
 
 		// Don't mark as refunded yet - wait for transfer webhook confirmation
@@ -1078,7 +1132,7 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 		$order->save();
 
 		error_log( '✅ CoinSub Refund - Refund initiated for order #' . $order_id . ' - waiting for transfer confirmation via webhook' );
-		error_log( '✅ CoinSub Refund - Refund ID: ' . $refund_id . ', Transaction Hash: ' . $transaction_hash );
+		error_log( '✅ CoinSub Refund - Refund ID: ' . $refund_id . ', Network: ' . $network_name . ', Token: ' . $token_symbol );
 
 		// Return true to WooCommerce so it shows the refund UI, but we'll update status when transfer webhook arrives
 		return true;
