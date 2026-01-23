@@ -317,27 +317,27 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 			error_log( '🏗️ CoinSub - init_form_fields() called' );
 		}
 		$this->form_fields = array(
-			'enabled'     => array(
+			'enabled'           => array(
 				'title'   => __( 'Enable/Disable', 'coinsub' ),
 				'type'    => 'checkbox',
 				'label'   => __( 'Enable Coinsub Crypto Payments', 'coinsub' ),
 				'default' => 'no',
 			),
 			// Environment selection removed for production plugin; base URL fixed to dev-api in code
-			'merchant_id' => array(
+			'merchant_id'       => array(
 				'title'       => __( 'Merchant ID', 'coinsub' ),
 				'type'        => 'text',
 				'description' => __( 'Get this from your merchant dashboard', 'coinsub' ),
 				'default'     => '',
 				'placeholder' => 'e.g., 12345678-abcd-1234-abcd-123456789abc',
 			),
-			'api_key'     => array(
+			'api_key'           => array(
 				'title'       => __( 'API Key', 'coinsub' ),
 				'type'        => 'password',
 				'description' => __( 'Get this from your merchant dashboard', 'coinsub' ),
 				'default'     => '',
 			),
-			'webhook_url' => array(
+			'webhook_url'       => array(
 				'title'             => __( 'Webhook URL', 'coinsub' ),
 				'type'              => 'text',
 				'description'       => __( 'Copy this URL and add it to your merchant dashboard. This URL receives payment confirmations and automatically updates order status to "Processing" when payment is complete.', 'coinsub' ),
