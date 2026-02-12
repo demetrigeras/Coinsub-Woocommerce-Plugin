@@ -19,13 +19,14 @@ class CoinSub_Subscriptions {
 		// Enforce subscription quantity limits during cart checks/updates
 		add_action( 'woocommerce_check_cart_items', array( $this, 'enforce_subscription_quantities' ) );
 
-		// Add subscription tab to My Account
-		add_filter( 'woocommerce_account_menu_items', array( $this, 'add_subscriptions_menu' ) );
-		add_action( 'init', array( $this, 'add_subscriptions_endpoint' ) );
-		add_action( 'woocommerce_account_coinsub-subscriptions_endpoint', array( $this, 'subscriptions_content' ) );
+		// Subscription details and cancel on single order view (My Account → View order)
+		add_action( 'woocommerce_order_details_after_order_table', array( $this, 'view_order_subscription_section' ), 10, 1 );
 
-		// Handle subscription cancellation
+		// Handle subscription cancellation (used by Cancel button on view-order page)
 		add_action( 'wp_ajax_coinsub_cancel_subscription', array( $this, 'ajax_cancel_subscription' ) );
+
+		// Cancel button script + hide CoinSub on-hold rows on Orders list
+		add_action( 'wp_footer', array( $this, 'my_account_orders_footer_script' ) );
 
 		// Add subscription fields to product
 		add_action( 'woocommerce_product_options_general_product_data', array( $this, 'add_subscription_fields' ) );
@@ -255,265 +256,248 @@ class CoinSub_Subscriptions {
 	}
 
 	/**
-	 * Add subscriptions menu item to My Account
+	 * Output subscription details and cancel button on My Account view-order page.
+	 * Shown after the order table for CoinSub subscription orders only.
+	 *
+	 * @param int|WC_Order $order Order ID or order object (WooCommerce passes order_id).
 	 */
-	public function add_subscriptions_menu( $items ) {
-		$new_items = array();
+	public function view_order_subscription_section( $order ) {
+		if ( is_numeric( $order ) ) {
+			$order = wc_get_order( $order );
+		}
+		if ( ! $order || ! $order instanceof WC_Order || $order->get_payment_method() !== 'coinsub' ) {
+			return;
+		}
+		$is_subscription = $order->get_meta( '_coinsub_is_subscription' );
+		$agreement_id    = $order->get_meta( '_coinsub_agreement_id' );
+		if ( $is_subscription !== 'yes' || empty( $agreement_id ) ) {
+			return;
+		}
+		$status         = $order->get_meta( '_coinsub_subscription_status' );
+		$frequency_text = $this->get_subscription_frequency_text( $order );
+		$duration_text  = $this->get_subscription_duration_text( $order );
+		$duration_raw   = $this->get_subscription_duration_raw( $order );
+		$start_date   = $order->get_date_created() ? $order->get_date_created()->date_i18n( wc_date_format() ) : '—';
+		$next_payment = $this->get_next_payment_for_display( $order, $agreement_id );
+		if ( empty( $duration_raw ) || $duration_raw === '0' ) {
+			$regularity_text = $frequency_text;
+		} else {
+			$regularity_text = $frequency_text . ' ' . sprintf( __( 'for %s', 'coinsub' ), $duration_text );
+		}
+		?>
+		<section class="coinsub-subscription-details" style="margin: 1.5em 0; padding: 1em 1.25em; background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 6px;">
+			<h3 style="margin: 0 0 1em; font-size: 1em;"><?php esc_html_e( 'Subscription', 'coinsub' ); ?></h3>
+			<div class="coinsub-subscription-fields" style="display: flex; flex-wrap: wrap; gap: 1.5em 2em;">
+				<div>
+					<div style="font-size: 0.85em; color: #6c757d; margin-bottom: 0.25em;"><?php esc_html_e( 'Start date', 'coinsub' ); ?></div>
+					<div><?php echo esc_html( $start_date ); ?></div>
+				</div>
+				<div>
+					<div style="font-size: 0.85em; color: #6c757d; margin-bottom: 0.25em;"><?php esc_html_e( 'Next payment', 'coinsub' ); ?></div>
+					<div><?php echo esc_html( $next_payment ); ?></div>
+				</div>
+				<div>
+					<div style="font-size: 0.85em; color: #6c757d; margin-bottom: 0.25em;"><?php esc_html_e( 'Regularity', 'coinsub' ); ?></div>
+					<div><?php echo esc_html( $regularity_text ); ?></div>
+				</div>
+				<?php if ( $status !== 'cancelled' ) : ?>
+					<div style="align-self: flex-end; margin-left: auto;">
+						<button type="button" class="button coinsub-cancel-subscription" data-agreement-id="<?php echo esc_attr( $agreement_id ); ?>" data-order-id="<?php echo esc_attr( $order->get_id() ); ?>"><?php esc_html_e( 'Cancel subscription', 'coinsub' ); ?></button>
+					</div>
+				<?php else : ?>
+					<div style="align-self: flex-end; margin-left: auto; color: #6c757d;"><em><?php esc_html_e( 'Cancelled', 'coinsub' ); ?></em></div>
+				<?php endif; ?>
+			</div>
+		</section>
+		<?php
+	}
 
-		foreach ( $items as $key => $value ) {
-			$new_items[ $key ] = $value;
+	/**
+	 * Get next payment date for display (customer view-order block).
+	 * Uses order meta if set; otherwise fetches from agreement API (same source as merchant).
+	 *
+	 * @param WC_Order $order        Order object.
+	 * @param string   $agreement_id Agreement ID.
+	 * @return string Formatted date or "—".
+	 */
+	private function get_next_payment_for_display( $order, $agreement_id ) {
+		$stored = $order->get_meta( '_coinsub_next_payment' );
+		if ( ! empty( $stored ) ) {
+			return $this->format_date_display( $stored );
+		}
+		$api_client = $this->get_api_client();
+		if ( ! $api_client || empty( $agreement_id ) ) {
+			return '—';
+		}
+		$agreement_response = $api_client->retrieve_agreement( $agreement_id );
+		if ( is_wp_error( $agreement_response ) ) {
+			return '—';
+		}
+		$agreement_data = isset( $agreement_response['data'] ) ? $agreement_response['data'] : $agreement_response;
+		$raw            = null;
+		if ( isset( $agreement_data['next_process_date'] ) ) {
+			$raw = $agreement_data['next_process_date'];
+		} elseif ( isset( $agreement_data['next_processing'] ) ) {
+			$raw = $agreement_data['next_processing'];
+		} elseif ( isset( $agreement_data['nextProcessDate'] ) ) {
+			$raw = $agreement_data['nextProcessDate'];
+		} elseif ( isset( $agreement_data['nextProcess'] ) ) {
+			$raw = $agreement_data['nextProcess'];
+		}
+		if ( empty( $raw ) ) {
+			return '—';
+		}
+		return $this->format_date_display( $raw );
+	}
 
-			// Add after orders
-			if ( $key === 'orders' ) {
-				$new_items['coinsub-subscriptions'] = __( 'Subscriptions', 'coinsub' );
+	/**
+	 * Get raw duration value from order (e.g. "0", "12"). Empty or "0" = until cancelled.
+	 *
+	 * @param WC_Order $order Order object.
+	 * @return string
+	 */
+	private function get_subscription_duration_raw( $order ) {
+		foreach ( $order->get_items() as $item ) {
+			$product = $item->get_product();
+			if ( $product && $product->get_meta( '_coinsub_subscription' ) === 'yes' ) {
+				$duration = $product->get_meta( '_coinsub_duration' );
+				return $duration === '' ? '0' : $duration;
 			}
 		}
-
-		return $new_items;
+		return '0';
 	}
 
 	/**
-	 * Register subscriptions endpoint
+	 * Get subscription duration display text (e.g. "12 payments" or "Until cancelled").
+	 *
+	 * @param WC_Order $order Order object.
+	 * @return string
 	 */
-	public function add_subscriptions_endpoint() {
-		add_rewrite_endpoint( 'coinsub-subscriptions', EP_ROOT | EP_PAGES );
+	private function get_subscription_duration_text( $order ) {
+		$raw = $this->get_subscription_duration_raw( $order );
+		if ( empty( $raw ) || $raw === '0' ) {
+			return __( 'Until cancelled', 'coinsub' );
+		}
+		return sprintf( _n( '%s payment', '%s payments', (int) $raw, 'coinsub' ), (int) $raw );
 	}
 
 	/**
-	 * Display subscriptions content
+	 * On My Account Orders list: hide CoinSub on-hold rows (client-side). On Orders and View-order: bind Cancel button.
 	 */
-	public function subscriptions_content() {
+	public function my_account_orders_footer_script() {
+		if ( ! is_account_page() || ! function_exists( 'is_wc_endpoint_url' ) ) {
+			return;
+		}
+		$on_orders = is_wc_endpoint_url( 'orders' );
+		$on_view   = is_wc_endpoint_url( 'view-order' );
+		if ( ! $on_orders && ! $on_view ) {
+			return;
+		}
 		$customer_id = get_current_user_id();
+		if ( ! $customer_id ) {
+			return;
+		}
 
-		// Get customer's subscriptions
-		$subscriptions = $this->get_customer_subscriptions( $customer_id );
+		$on_hold_ids = array();
+		if ( $on_orders ) {
+			$on_hold_ids = wc_get_orders(
+				array(
+					'customer_id'    => $customer_id,
+					'status'         => 'on-hold',
+					'payment_method' => 'coinsub',
+					'return'         => 'ids',
+				)
+			);
+			$on_hold_ids = is_array( $on_hold_ids ) ? array_map( 'intval', $on_hold_ids ) : array();
+		}
 
+		$cancel_nonce = wp_create_nonce( 'coinsub_cancel_subscription' );
+		$ajax_url     = admin_url( 'admin-ajax.php' );
 		?>
-		<h2><?php _e( 'My Subscriptions', 'coinsub' ); ?></h2>
-		
-		<?php if ( empty( $subscriptions ) ) : ?>
-			<p><?php _e( 'You have no active subscriptions.', 'coinsub' ); ?></p>
-		<?php else : ?>
-			<table class="woocommerce-orders-table woocommerce-MyAccount-orders shop_table shop_table_responsive my_account_orders">
-				<thead>
-					<tr>
-						<th><?php _e( 'Product', 'coinsub' ); ?></th>
-						<th><?php _e( 'Amount', 'coinsub' ); ?></th>
-						<th><?php _e( 'Frequency', 'coinsub' ); ?></th>
-						<th><?php _e( 'Created At', 'coinsub' ); ?></th>
-						<th><?php _e( 'Next Processing', 'coinsub' ); ?></th>
-						<th><?php _e( 'Cancelled At', 'coinsub' ); ?></th>
-						<th><?php _e( 'Status', 'coinsub' ); ?></th>
-						<th><?php _e( 'Actions', 'coinsub' ); ?></th>
-					</tr>
-				</thead>
-				<tbody>
-					<?php foreach ( $subscriptions as $subscription ) : ?>
-					<tr>
-						<td><?php echo esc_html( $subscription['product_name'] ); ?></td>
-						<td><?php echo wc_price( $subscription['amount'] ); ?></td>
-						<td><?php echo esc_html( $subscription['frequency_text'] ); ?></td>
-						<td><?php echo esc_html( $subscription['created_at'] ?? '—' ); ?></td>
-						<td><?php echo esc_html( $subscription['next_processing'] ?? '—' ); ?></td>
-						<td><?php echo esc_html( $subscription['cancelled_at'] ?? '—' ); ?></td>
-						<td><?php echo esc_html( $subscription['status'] ); ?></td>
-						<td>
-							<?php if ( $subscription['status'] === 'Active' ) : ?>
-								<button class="button coinsub-cancel-subscription" 
-										data-agreement-id="<?php echo esc_attr( $subscription['agreement_id'] ); ?>"
-										data-order-id="<?php echo esc_attr( $subscription['order_id'] ); ?>">
-									<?php _e( 'Cancel', 'coinsub' ); ?>
-								</button>
-							<?php endif; ?>
-						</td>
-					</tr>
-					<?php endforeach; ?>
-				</tbody>
-			</table>
-			
-			<script>
-			jQuery(document).ready(function($) {
-				$('.coinsub-cancel-subscription').on('click', function(e) {
-					e.preventDefault();
-					
-					if (!confirm('<?php _e( 'Are you sure you want to cancel this subscription?', 'coinsub' ); ?>')) {
-						return;
+		<script>
+		(function() {
+			var coinsubOnHoldOrderIds = <?php echo wp_json_encode( $on_hold_ids ); ?>;
+
+			function hideCoinsubOnHoldRows() {
+				if ( coinsubOnHoldOrderIds.length === 0 ) return;
+				var table = document.querySelector( '.woocommerce-orders-table, .woocommerce-MyAccount-orders' );
+				if ( ! table ) return;
+				var rows = table.querySelectorAll( 'tbody tr' );
+				rows.forEach( function( row ) {
+					var link = row.querySelector( 'a[href*="view-order"]' );
+					if ( ! link ) return;
+					var href = link.getAttribute( 'href' ) || '';
+					var match = href.match( /view-order[\/=](\d+)/i );
+					if ( match && coinsubOnHoldOrderIds.indexOf( parseInt( match[1], 10 ) ) !== -1 ) {
+						row.style.display = 'none';
 					}
-					
-					var button = $(this);
-					var agreementId = button.data('agreement-id');
-					var orderId = button.data('order-id');
-					
-					button.prop('disabled', true).text('<?php _e( 'Cancelling...', 'coinsub' ); ?>');
-					
-					$.ajax({
-						url: '<?php echo admin_url( 'admin-ajax.php' ); ?>',
+				});
+			}
+
+			if ( document.readyState === 'loading' ) {
+				document.addEventListener( 'DOMContentLoaded', hideCoinsubOnHoldRows );
+			} else {
+				hideCoinsubOnHoldRows();
+			}
+
+			jQuery( document ).ready( function( $ ) {
+				$( document.body ).on( 'click', '.coinsub-cancel-subscription', function( e ) {
+					e.preventDefault();
+					if ( ! confirm( '<?php echo esc_js( __( 'Are you sure you want to cancel this subscription?', 'coinsub' ) ); ?>' ) ) return;
+					var btn = $( this );
+					var agreementId = btn.data( 'agreement-id' );
+					var orderId = btn.data( 'order-id' );
+					btn.prop( 'disabled', true ).text( '<?php echo esc_js( __( 'Cancelling...', 'coinsub' ) ); ?>' );
+					$.ajax( {
+						url: <?php echo wp_json_encode( $ajax_url ); ?>,
 						type: 'POST',
 						data: {
 							action: 'coinsub_cancel_subscription',
 							agreement_id: agreementId,
 							order_id: orderId,
-							nonce: '<?php echo wp_create_nonce( 'coinsub_cancel_subscription' ); ?>'
+							nonce: <?php echo wp_json_encode( $cancel_nonce ); ?>
 						},
-						success: function(response) {
-							if (response.success) {
-								alert('<?php _e( 'Subscription cancelled successfully', 'coinsub' ); ?>');
+						success: function( response ) {
+							if ( response.success ) {
+								alert( '<?php echo esc_js( __( 'Subscription cancelled successfully', 'coinsub' ) ); ?>' );
 								location.reload();
 							} else {
-								alert(response.data.message);
-								button.prop('disabled', false).text('<?php _e( 'Cancel', 'coinsub' ); ?>');
+								alert( response.data && response.data.message ? response.data.message : '<?php echo esc_js( __( 'Error cancelling subscription', 'coinsub' ) ); ?>' );
+								btn.prop( 'disabled', false ).text( '<?php echo esc_js( __( 'Cancel subscription', 'coinsub' ) ); ?>' );
 							}
 						},
 						error: function() {
-							alert('<?php _e( 'Error cancelling subscription', 'coinsub' ); ?>');
-							button.prop('disabled', false).text('<?php _e( 'Cancel', 'coinsub' ); ?>');
+							alert( '<?php echo esc_js( __( 'Error cancelling subscription', 'coinsub' ) ); ?>' );
+							btn.prop( 'disabled', false ).text( '<?php echo esc_js( __( 'Cancel subscription', 'coinsub' ) ); ?>' );
 						}
-					});
-				});
-			});
-			</script>
-		<?php endif; ?>
+					} );
+				} );
+			} );
+		})();
+		</script>
 		<?php
 	}
 
 	/**
-	 * Get customer's subscriptions
+	 * Format date for display (e.g. Next payment). Supports numeric timestamp or date string.
+	 * Uses wc_date_format() so it matches Start date on the view-order block.
+	 *
+	 * @param int|string $date_value Timestamp or date string.
+	 * @return string
 	 */
-	private function get_customer_subscriptions( $customer_id ) {
-		$subscriptions = array();
-
-		// Get ALL customer orders with Coinsub payment
-		$orders = wc_get_orders(
-			array(
-				'customer_id'    => $customer_id,
-				'payment_method' => 'coinsub',
-				'limit'          => -1,
-			)
-		);
-
-		foreach ( $orders as $order ) {
-			// Check if this is a subscription order using the metadata flag
-			$is_subscription = $order->get_meta( '_coinsub_is_subscription' );
-
-			if ( $is_subscription !== 'yes' ) {
-				continue; // Not a subscription, skip
-			}
-
-			// Get agreement ID (this gets set by webhook after payment)
-			$agreement_id = $order->get_meta( '_coinsub_agreement_id' );
-
-			if ( empty( $agreement_id ) ) {
-				// Subscription product but no agreement yet (payment not complete)
-				continue;
-			}
-
-			$status = $order->get_meta( '_coinsub_subscription_status' );
-
-			// Fetch agreement details from API to get dates
-			$created_at        = $order->get_date_created()->date( 'Y-m-d H:i:s' );
-			$next_process_date = '';
-			$cancelled_at      = '';
-
-			$api_client = $this->get_api_client();
-			if ( $api_client ) {
-				$agreement_response = $api_client->retrieve_agreement( $agreement_id );
-				if ( ! is_wp_error( $agreement_response ) ) {
-					$agreement_data = isset( $agreement_response['data'] ) ? $agreement_response['data'] : $agreement_response;
-
-					// Extract dates from agreement data - check multiple possible field names and nests
-					if ( isset( $agreement_data['created_at'] ) ) {
-						$created_at = $this->format_date( $agreement_data['created_at'] );
-					} elseif ( isset( $agreement_data['createdAt'] ) ) {
-						$created_at = $this->format_date( $agreement_data['createdAt'] );
-					} elseif ( isset( $agreement_data['agreement']['created_at'] ) ) {
-						$created_at = $this->format_date( $agreement_data['agreement']['created_at'] );
-					}
-
-					// Check for next_process_date with multiple variants
-					if ( isset( $agreement_data['next_process_date'] ) ) {
-						$next_process_date = $this->format_date( $agreement_data['next_process_date'] );
-					} elseif ( isset( $agreement_data['next_processing'] ) ) {
-						$next_process_date = $this->format_date( $agreement_data['next_processing'] );
-					} elseif ( isset( $agreement_data['nextProcessDate'] ) ) {
-						$next_process_date = $this->format_date( $agreement_data['nextProcessDate'] );
-					} elseif ( isset( $agreement_data['nextProcess'] ) ) {
-						$next_process_date = $this->format_date( $agreement_data['nextProcess'] );
-					}
-
-					// Cancelled variants (American/British spellings and cases)
-					if ( isset( $agreement_data['cancelled_at'] ) ) {
-						$cancelled_at = $this->format_date( $agreement_data['cancelled_at'] );
-					} elseif ( isset( $agreement_data['canceled_at'] ) ) {
-						$cancelled_at = $this->format_date( $agreement_data['canceled_at'] );
-					} elseif ( isset( $agreement_data['cancelledAt'] ) ) {
-						$cancelled_at = $this->format_date( $agreement_data['cancelledAt'] );
-					} elseif ( isset( $agreement_data['canceledAt'] ) ) {
-						$cancelled_at = $this->format_date( $agreement_data['canceledAt'] );
-					} elseif ( isset( $agreement_data['agreement']['cancelled_at'] ) ) {
-						$cancelled_at = $this->format_date( $agreement_data['agreement']['cancelled_at'] );
-					} elseif ( isset( $agreement_data['agreement']['canceled_at'] ) ) {
-						$cancelled_at = $this->format_date( $agreement_data['agreement']['canceled_at'] );
-					}
-
-					// Prefer agreement frequency/interval for display if provided
-					$agreement_frequency_text = $this->format_frequency_from_agreement( $agreement_data );
-					if ( ! empty( $agreement_frequency_text ) ) {
-						$frequency_text_override = $agreement_frequency_text;
-					}
-				}
-			}
-
-			// Show both active and cancelled subscriptions
-			$subscriptions[] = array(
-				'order_id'          => $order->get_id(),
-				'agreement_id'      => $agreement_id,
-				'product_name'      => $this->get_subscription_product_name( $order ),
-				'amount'            => $order->get_total(),
-				'frequency_text'    => isset( $frequency_text_override ) ? $frequency_text_override : $this->get_subscription_frequency_text( $order ),
-				'status'            => $status === 'cancelled' ? 'Cancelled' : 'Active',
-				'created_at'        => $created_at,
-				'next_process_date' => $next_process_date ?: '—',
-				'cancelled_at'      => ( $cancelled_at ?: ( $order->get_meta( '_coinsub_cancelled_at' ) ?: '—' ) ),
-			);
-		}
-
-		return $subscriptions;
-	}
-
-	/**
-	 * Format date from API response
-	 */
-	private function format_date( $date_value ) {
+	private function format_date_display( $date_value ) {
 		if ( empty( $date_value ) ) {
 			return '';
 		}
-
-		// If it's a timestamp (numeric)
+		$format = wc_date_format();
 		if ( is_numeric( $date_value ) ) {
-			return date_i18n( 'Y-m-d h:i:s A', (int) $date_value );
+			return date_i18n( $format, (int) $date_value );
 		}
-
-		// If it's a date string, try to parse it
 		$timestamp = strtotime( $date_value );
 		if ( $timestamp !== false ) {
-			return date_i18n( 'Y-m-d h:i:s A', $timestamp );
+			return date_i18n( $format, $timestamp );
 		}
-
-		// Return as-is if we can't parse it
-		return $date_value;
-	}
-
-	/**
-	 * Get subscription product name from order
-	 */
-	private function get_subscription_product_name( $order ) {
-		$items = $order->get_items();
-		if ( empty( $items ) ) {
-			return 'Subscription';
-		}
-
-		$first_item = reset( $items );
-		return $first_item->get_name();
+		return (string) $date_value;
 	}
 
 	/**
@@ -556,46 +540,6 @@ class CoinSub_Subscriptions {
 		}
 
 		return __( 'N/A', 'coinsub' );
-	}
-
-	/**
-	 * Build frequency text from agreement data if it includes numeric frequency/interval
-	 */
-	private function format_frequency_from_agreement( $agreement_data ) {
-		$frequency = null;
-		$interval  = null;
-		if ( isset( $agreement_data['frequency'] ) ) {
-			$frequency = is_numeric( $agreement_data['frequency'] ) ? (int) $agreement_data['frequency'] : null;
-		}
-		if ( isset( $agreement_data['interval'] ) ) {
-			$interval = is_numeric( $agreement_data['interval'] ) ? (int) $agreement_data['interval'] : null;
-		}
-		if ( $frequency === null || $interval === null ) {
-			return '';
-		}
-
-		// Frequency words
-		$frequencyWords = array(
-			1 => 'Every',
-			2 => 'Every Other',
-			3 => 'Every Third',
-			4 => 'Every Fourth',
-			5 => 'Every Fifth',
-			6 => 'Every Sixth',
-			7 => 'Every Seventh',
-		);
-		$freqText       = isset( $frequencyWords[ $frequency ] ) ? $frequencyWords[ $frequency ] : 'Every ' . $frequency . 'th';
-
-		// Interval words (backend mapping 0=Day,1=Week,2=Month,3=Year)
-		$intervalWords = array(
-			0 => 'Day',
-			1 => 'Week',
-			2 => 'Month',
-			3 => 'Year',
-		);
-		$intervalText  = isset( $intervalWords[ $interval ] ) ? $intervalWords[ $interval ] : 'Month';
-
-		return $freqText . ' ' . $intervalText;
 	}
 
 	/**

@@ -23,7 +23,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 #coinsub-checkout-iframe {
 	width: 100%;
-	height: 800px;
+	height: 550px;
 	border: none;
 }
 

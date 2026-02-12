@@ -141,16 +141,19 @@ class CoinSub_Webhook_Handler {
 			return;
 		}
 
-		// Find the order by origin ID (purchase session ID)
+		// Find the order by origin_id: try _coinsub_purchase_session_id first, then _coinsub_origin_id (whitelabel-style)
 		error_log( 'CoinSub Webhook: Searching for order with origin ID: ' . $origin_id );
 		$order = $this->find_order_by_purchase_session_id( $origin_id );
+		if ( ! $order ) {
+			$order = $this->find_order_by_origin_id( $origin_id );
+		}
 
 		if ( $order ) {
-			error_log( '✅ CoinSub Webhook: Order found by purchase session ID: Order #' . $order->get_id() );
+			error_log( '✅ CoinSub Webhook: Order found: Order #' . $order->get_id() );
 			error_log( 'CoinSub Webhook: Order status: ' . $order->get_status() );
 			error_log( 'CoinSub Webhook: Order payment method: ' . $order->get_payment_method() );
 		} else {
-			error_log( '⚠️ CoinSub Webhook: Order NOT found by purchase session ID: ' . $origin_id );
+			error_log( '⚠️ CoinSub Webhook: Order NOT found by purchase session ID or origin_id: ' . $origin_id );
 		}
 
 		// For recurring payments, also try to find by agreement_id
@@ -461,10 +464,13 @@ class CoinSub_Webhook_Handler {
 			error_log( 'CoinSub Webhook: Set payment method to coinsub' );
 		}
 
-		// Add order note with transaction details
+		// Payment webhook: read from transaction_details first, then fallback to top-level data (same as whitelabel).
+		// Expected shape: data.transaction_details.transaction_hash, .chain_id, .network, .explorer_url, .currency, etc.
 		$transaction_details = $data['transaction_details'] ?? array();
-		$transaction_id      = $transaction_details['transaction_id'] ?? 'N/A';
-		$transaction_hash    = $transaction_details['transaction_hash'] ?? 'N/A';
+
+		// Transaction hash: preferred transaction_details.transaction_hash, fallback data.transaction_hash
+		$transaction_hash = isset( $transaction_details['transaction_hash'] ) ? $transaction_details['transaction_hash'] : ( $data['transaction_hash'] ?? 'N/A' );
+		$transaction_id   = isset( $transaction_details['transaction_id'] ) ? $transaction_details['transaction_id'] : ( $data['transaction_id'] ?? 'N/A' );
 
 		$order->add_order_note(
 			sprintf(
@@ -473,44 +479,46 @@ class CoinSub_Webhook_Handler {
 			)
 		);
 
-		// Store transaction details in WooCommerce
+		// Store payment/agreement IDs (top-level)
 		if ( isset( $data['payment_id'] ) ) {
 			$order->update_meta_data( '_coinsub_payment_id', $data['payment_id'] );
 		}
-
 		if ( isset( $data['agreement_id'] ) ) {
 			$order->update_meta_data( '_coinsub_agreement_id', $data['agreement_id'] );
 		}
 
-		if ( isset( $transaction_details['transaction_id'] ) ) {
-			$order->update_meta_data( '_coinsub_transaction_id', $transaction_details['transaction_id'] );
+		// Transaction ID: transaction_details first, then data
+		if ( ! empty( $transaction_id ) && $transaction_id !== 'N/A' ) {
+			$order->update_meta_data( '_coinsub_transaction_id', $transaction_id );
 		}
 
-		if ( isset( $transaction_details['transaction_hash'] ) ) {
-			$order->update_meta_data( '_coinsub_transaction_hash', $transaction_details['transaction_hash'] );
+		// Transaction hash: transaction_details first, then data
+		if ( ! empty( $transaction_hash ) && $transaction_hash !== 'N/A' ) {
+			$order->update_meta_data( '_coinsub_transaction_hash', $transaction_hash );
 		}
 
-		if ( isset( $transaction_details['chain_id'] ) ) {
-			$order->update_meta_data( '_coinsub_chain_id', $transaction_details['chain_id'] );
+		// Chain ID: transaction_details first, then data; store as string for consistency with refund flow
+		$chain_id = isset( $transaction_details['chain_id'] ) ? $transaction_details['chain_id'] : ( $data['chain_id'] ?? null );
+		if ( $chain_id !== null && $chain_id !== '' ) {
+			$order->update_meta_data( '_coinsub_chain_id', (string) $chain_id );
 		}
 
-		// Store network name from webhook metadata if available (for explorer URLs)
-		if ( isset( $transaction_details['network'] ) ) {
-			$order->update_meta_data( '_coinsub_network_name', $transaction_details['network'] );
-		} elseif ( isset( $data['network'] ) ) {
-			$order->update_meta_data( '_coinsub_network_name', $data['network'] );
+		// Network name (display): transaction_details.network first, fallback data.network
+		$network_name = isset( $transaction_details['network'] ) ? $transaction_details['network'] : ( $data['network'] ?? null );
+		if ( ! empty( $network_name ) ) {
+			$order->update_meta_data( '_coinsub_network_name', $network_name );
 		}
 
-		// Store explorer URL directly from webhook if provided
-		if ( isset( $transaction_details['explorer_url'] ) ) {
-			$order->update_meta_data( '_coinsub_explorer_url', $transaction_details['explorer_url'] );
-		} elseif ( isset( $data['explorer_url'] ) ) {
-			$order->update_meta_data( '_coinsub_explorer_url', $data['explorer_url'] );
+		// Explorer URL: transaction_details first, fallback data.explorer_url
+		$explorer_url = isset( $transaction_details['explorer_url'] ) ? $transaction_details['explorer_url'] : ( $data['explorer_url'] ?? null );
+		if ( ! empty( $explorer_url ) ) {
+			$order->update_meta_data( '_coinsub_explorer_url', $explorer_url );
 		}
 
-		// Store customer wallet address if available
-		if ( isset( $transaction_details['customer_wallet_address'] ) ) {
-			$order->update_meta_data( '_customer_wallet_address', $transaction_details['customer_wallet_address'] );
+		// Customer wallet: transaction_details.customer_wallet_address first
+		$customer_wallet = isset( $transaction_details['customer_wallet_address'] ) ? $transaction_details['customer_wallet_address'] : null;
+		if ( ! empty( $customer_wallet ) ) {
+			$order->update_meta_data( '_customer_wallet_address', $customer_wallet );
 		}
 
 		// Store signing address from agreement message if available
@@ -534,19 +542,14 @@ class CoinSub_Webhook_Handler {
 			}
 		}
 
-		// Store token symbol from currency field (primary location)
-		if ( isset( $data['currency'] ) ) {
-			$order->update_meta_data( '_coinsub_token_symbol', $data['currency'] );
-			error_log( '💎 CoinSub Webhook - Stored token_symbol from currency: ' . $data['currency'] );
-		} elseif ( isset( $transaction_details['currency'] ) ) {
-			$order->update_meta_data( '_coinsub_token_symbol', $transaction_details['currency'] );
-			error_log( '💎 CoinSub Webhook - Stored token_symbol from transaction_details.currency: ' . $transaction_details['currency'] );
-		} elseif ( isset( $transaction_details['token_symbol'] ) ) {
-			$order->update_meta_data( '_coinsub_token_symbol', $transaction_details['token_symbol'] );
-			error_log( '💎 CoinSub Webhook - Stored token_symbol from transaction_details: ' . $transaction_details['token_symbol'] );
-		} elseif ( isset( $data['token_symbol'] ) ) {
-			$order->update_meta_data( '_coinsub_token_symbol', $data['token_symbol'] );
-			error_log( '💎 CoinSub Webhook - Stored token_symbol from top level: ' . $data['token_symbol'] );
+		// Token/currency: transaction_details.currency first, then data.currency / token_symbol (for refunds)
+		$token_symbol = isset( $transaction_details['currency'] ) ? $transaction_details['currency'] : ( isset( $transaction_details['token_symbol'] ) ? $transaction_details['token_symbol'] : null );
+		if ( empty( $token_symbol ) ) {
+			$token_symbol = isset( $data['currency'] ) ? $data['currency'] : ( $data['token_symbol'] ?? null );
+		}
+		if ( ! empty( $token_symbol ) ) {
+			$order->update_meta_data( '_coinsub_token_symbol', $token_symbol );
+			error_log( '💎 CoinSub Webhook - Stored token_symbol: ' . $token_symbol );
 		} else {
 			error_log( '⚠️ CoinSub Webhook - Token symbol not found in webhook payload' );
 		}
@@ -780,6 +783,24 @@ class CoinSub_Webhook_Handler {
 		}
 
 		$order->save();
+	}
+
+	/**
+	 * Find order by origin_id meta (e.g. _coinsub_origin_id = origin_id from webhook).
+	 * Used when backend sends origin_id that was stored as _coinsub_origin_id (whitelabel-style).
+	 */
+	private function find_order_by_origin_id( $origin_id ) {
+		if ( empty( $origin_id ) ) {
+			return null;
+		}
+		$orders = wc_get_orders(
+			array(
+				'meta_key'   => '_coinsub_origin_id',
+				'meta_value' => $origin_id,
+				'limit'      => 1,
+			)
+		);
+		return ! empty( $orders ) ? $orders[0] : null;
 	}
 
 	/**

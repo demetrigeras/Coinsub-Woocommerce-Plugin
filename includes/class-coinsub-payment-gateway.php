@@ -123,17 +123,13 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 		// Call parent FIRST to generate the form with proper action attribute
 		parent::admin_options();
 
-		// Now inject instructions at the top using JavaScript (after form is rendered)
-		// Get Meld URL first (PHP) so we can properly escape it for JavaScript
-		$meld_url = esc_js( $this->get_meld_onramp_url() );
+		// Inject setup instructions at the top (after form is rendered); HTML from get_setup_instructions_html()
+		$instructions_html = $this->get_setup_instructions_html();
 		?>
 		<script type="text/javascript">
 		jQuery(document).ready(function($) {
-			// Inject instructions box at the top (after the h2 title, before the form table)
-			var meldUrl = <?php echo json_encode( $this->get_meld_onramp_url() ); ?>;
-			var instructions = $('<div style="background:#fff;border-left:4px solid #3b82f6;padding:20px;margin:20px 0;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;color:#1d2327"><h3 style=margin-top:0;font-size:1.3em>Setup Instructions</h3><h4 style="margin:1.5em 0 .5em">Step 1. Select Environment & Get Your Coinsub Credentials</h4><ol style=line-height:1.6;margin-top:0><li>Log in to your account<li>Navigate to <strong>Settings</strong> in your dashboard<li>Copy your <strong>Merchant ID</strong><li>Create and copy your <strong>API Key</strong><li>Paste both into the fields below</ol><h4 style="margin:1.5em 0 .5em">Step 2: Configure Webhook (CRITICAL)</h4><ol style=line-height:1.6;margin-top:0><li>Copy the <strong>Webhook URL</strong> shown below (it will look like: <code>https://yoursite.com/wp-json/coinsub/v1/webhook</code>)<li>Go back to your dashboard <strong>Settings</strong><li>Find the <strong>Webhook URL</strong> field<li><strong>Paste your webhook URL</strong> into that field and save<li><em>This is essential</em> - without this, orders won\'t update when payments complete!</ol><h4 style="margin:1.5em 0 .5em">Step 3: Fix WordPress Checkout Page (If Needed)</h4><ol style=line-height:1.6;margin-top:0><li>Go to <strong>Pages</strong> → Find your <strong>Checkout</strong> page → Click <strong>Edit</strong><li>In the page editor, click the <strong style=font-size:1.2em;line-height:1>⋮</strong> (three vertical dots) in the top right<li>Select <strong>Code Editor</strong><li>Replace any block content with: <code style="background:#f0f0f1;padding:1px 3px">[woocommerce_checkout]</code><li>Click <strong>Update</strong> to save</ol><h4 style="margin:1.5em 0 .5em">Step 4: Enable Coinsub</h4><ol style=line-height:1.6;margin-top:0><li>Check the <strong>"Enable Coinsub Crypto Payments"</strong> box below<li>Click <strong>Save changes</strong><li>Done! Customers will now see the payment option at checkout!</ol><p style="margin-bottom:0;padding:10px;background:#fef3c7;border-radius:4px;border:1px solid #998843"><strong>⚠️ Important:</strong> Coinsub works alongside other payment methods. Make sure to complete ALL steps above, especially the webhook configuration!<div style="margin-top:20px;padding:15px;background:#e8f5e9;border-radius:4px;border:1px solid #4caf50"><h3 style=margin-top:0>💳 Setting Up Subscription Products</h3><p><strong>To enable recurring payments for a product:</strong><ol style=line-height:1.6;margin-top:10px><li>Go to <strong>Products</strong> → Select the product you want to make a subscription<li>Click <strong>Edit</strong> and scroll to the <strong>Product Data</strong> section<li>Check the <strong>"Coinsub Subscription"</strong> checkbox<li>Configure the subscription settings:<ul style=margin-top:8px><li><strong>Frequency:</strong> How often it repeats (Every, Every Other, Every Third, etc.)<li><strong>Interval:</strong> Time period (Day, Week, Month, Year)<li><strong>Duration:</strong> Number of payments (0 = Until Cancelled)</ul><li>Click <strong>Update</strong> to save the product</ol><p style=margin-bottom:0;font-size:13px;color:#2e7d32><strong>Note:</strong> Each product must be configured individually. Customers can manage their subscriptions from their account page.</div><div style="margin-top:20px;padding:15px;background:#eef7fe;border-radius:4px;border:1px solid #0284c7"><h3 style=margin-top:0>Add USDC Polygon for Refunds</h3><p><strong>All refunds are processed as USDC on Polygon.</strong><p>To process refunds, you\'ll need USDC tokens on the Polygon network in your merchant wallet.<p style=margin-bottom:10px><a class="button button-primary"href="' + meldUrl + '"style=background:#2271b1;border-color:#2271b1 target=_blank>Onramp USDC Polygon via Meld</a><p style=margin-bottom:0;font-size:12px;color:#666><strong>Tip:</strong> Keep a small reserve of USDC on Polygon to cover refunds quickly. Click the button above to add funds via Meld.</div></div>');
-			
-			// Insert after the h2 title (which is the first h2 in the form)
+			var instructionsHtml = <?php echo wp_json_encode( $instructions_html ); ?>;
+			var instructions = $(instructionsHtml);
 			$('h2').first().after(instructions);
 			
 			// CRITICAL FIX: Ensure form action is set (run multiple times to catch dynamic form generation)
@@ -349,11 +345,6 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 				'custom_attributes' => array( 'readonly' => 'readonly' ),
 				'css'               => 'background: #f0f0f0;',
 			),
-			'refund_disclaimer' => array(
-				'title'       => __( '⚠️ Refund Requirements & Limitations', 'coinsub' ),
-				'type'        => 'title',
-				'description' => '<div style="background:#fff3cd;border-left:4px solid #ffc107;padding:15px;margin:10px 0;"><strong style="display:block;margin-bottom:10px;color:#856404;">Important Refund Disclaimer:</strong><ul style="margin:5px 0;padding-left:20px;color:#856404;"><li><strong>Refunds are only available for customers who paid using Coinsub wallets.</strong></li><li>Your merchant account must have refund capabilities enabled.</li><li>Refunds are processed on the <strong>same network and token</strong> as the original payment.</li><li>If the original payment network cannot be determined, refunds default to <strong>USDC on Polygon mainnet</strong>.</li><li>Customers must have a compatible wallet to receive refunds.</li></ul><p style="margin:10px 0 0 0;color:#856404;"><strong>💰 Insufficient Funds?</strong> If you don\'t have enough tokens to process a refund, you can purchase them via the <strong>"Onramp via Meld"</strong> button below. Make sure to buy the correct token on the correct network that matches the original payment.</p><p style="margin:10px 0 0 0;color:#856404;"><strong>⚠️ Before processing refunds:</strong> Verify that the customer\'s payment method supports refunds and that your merchant account has refund functionality enabled. Contact support if you\'re unsure.</p></div>',
-			),
 
 		);
 	}
@@ -364,6 +355,89 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 	 */
 	public function get_api_base_url() {
 		return 'https://api.coinsub.io/v1';
+	}
+
+	/**
+	 * Build setup instructions HTML for the gateway settings page.
+	 * Uses app.coinsub.io as dashboard; same structure/wording as whitelabel plugin.
+	 *
+	 * @return string HTML for the instructions block.
+	 */
+	public function get_setup_instructions_html() {
+		$dashboard_url = 'https://app.coinsub.io';
+		$meld_url      = $this->get_meld_onramp_url();
+		$host          = parse_url( $dashboard_url, PHP_URL_HOST );
+		$dashboard_link = '<a href="' . esc_url( $dashboard_url ) . '" target="_blank" rel="noopener">' . esc_html( $host ?: $dashboard_url ) . '</a>';
+		$login_phrase  = sprintf( __( 'Log in to your account at %s', 'coinsub' ), $dashboard_link );
+		$nav_dashboard_phrase = __( 'Navigate to <strong>Settings</strong> in your dashboard', 'coinsub' );
+		$go_back_phrase      = __( 'Go back to your dashboard <strong>Settings</strong>', 'coinsub' );
+		$important_phrase     = __( '<strong>⚠️ Important:</strong> Coinsub works alongside other payment methods. Make sure to complete ALL steps above, especially the webhook configuration!', 'coinsub' );
+		$enable_label        = __( 'Enable Coinsub Crypto Payments', 'coinsub' );
+
+		ob_start();
+		?>
+		<div style="background:#fff;border-left:4px solid #3b82f6;padding:20px;margin:20px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1d2327">
+			<h3 style="margin-top:0;font-size:1.3em"><?php echo esc_html( __( 'Setup Instructions', 'coinsub' ) ); ?></h3>
+			<h4 style="margin:1.5em 0 .5em"><?php esc_html_e( 'Step 1. Get Your CoinSub Credentials', 'coinsub' ); ?></h4>
+			<ol style="line-height:1.6;margin-top:0">
+				<li><?php echo $login_phrase; ?></li>
+				<li><?php echo $nav_dashboard_phrase; ?></li>
+				<li><?php echo wp_kses( __( 'Copy your <strong>Merchant ID</strong>', 'coinsub' ), array( 'strong' => array() ) ); ?></li>
+				<li><?php echo wp_kses( __( 'Create and copy your <strong>API Key</strong>', 'coinsub' ), array( 'strong' => array() ) ); ?></li>
+				<li><?php esc_html_e( 'Paste both into the fields below', 'coinsub' ); ?></li>
+			</ol>
+			<h4 style="margin:1.5em 0 .5em"><?php esc_html_e( 'Step 2: Configure Webhook (CRITICAL)', 'coinsub' ); ?></h4>
+			<ol style="line-height:1.6;margin-top:0">
+				<li><?php echo wp_kses( __( 'Copy the <strong>Webhook URL</strong> shown below (it will look like: <code>https://yoursite.com/wp-json/coinsub/v1/webhook</code>)', 'coinsub' ), array( 'strong' => array(), 'code' => array() ) ); ?></li>
+				<li><?php echo $go_back_phrase; ?></li>
+				<li><?php echo wp_kses( __( 'Find the <strong>Webhook URL</strong> field', 'coinsub' ), array( 'strong' => array() ) ); ?></li>
+				<li><?php echo wp_kses( __( '<strong>Paste your webhook URL</strong> into that field and save', 'coinsub' ), array( 'strong' => array() ) ); ?></li>
+				<li><em><?php esc_html_e( 'This is essential', 'coinsub' ); ?></em> — <?php esc_html_e( "without this, orders won't update when payments complete!", 'coinsub' ); ?></li>
+			</ol>
+			<h4 style="margin:1.5em 0 .5em"><?php esc_html_e( 'Step 3: Fix WordPress Checkout Page (If Needed)', 'coinsub' ); ?></h4>
+			<ol style="line-height:1.6;margin-top:0">
+				<li><?php echo wp_kses( __( 'Go to <strong>Pages</strong> → Find your <strong>Checkout</strong> page → Click <strong>Edit</strong>', 'coinsub' ), array( 'strong' => array() ) ); ?></li>
+				<li><?php echo wp_kses( __( 'In the page editor, click the <strong style="font-size:1.2em;line-height:1">⋮</strong> (three vertical dots) in the top right', 'coinsub' ), array( 'strong' => array( 'style' => array() ) ) ); ?></li>
+				<li><?php echo wp_kses( __( 'Select <strong>Code Editor</strong>', 'coinsub' ), array( 'strong' => array() ) ); ?></li>
+				<li><?php echo wp_kses( __( 'Replace any block content with: <code style="background:#f0f0f1;padding:1px 3px">[woocommerce_checkout]</code>', 'coinsub' ), array( 'code' => array( 'style' => array() ) ) ); ?></li>
+				<li><?php echo wp_kses( __( 'Click <strong>Update</strong> to save', 'coinsub' ), array( 'strong' => array() ) ); ?></li>
+			</ol>
+			<h4 style="margin:1.5em 0 .5em"><?php esc_html_e( 'Step 4: Enable CoinSub', 'coinsub' ); ?></h4>
+			<ol style="line-height:1.6;margin-top:0">
+				<li><?php echo wp_kses( sprintf( __( 'Check the <strong>%s</strong> box below', 'coinsub' ), esc_html( $enable_label ) ), array( 'strong' => array() ) ); ?></li>
+				<li><?php echo wp_kses( __( 'Click <strong>Save changes</strong>', 'coinsub' ), array( 'strong' => array() ) ); ?></li>
+				<li><?php esc_html_e( 'Done! Customers will now see the payment option at checkout!', 'coinsub' ); ?></li>
+			</ol>
+			<p style="margin-bottom:0;padding:10px;background:#fef3c7;border-radius:4px;border:1px solid #998843"><?php echo wp_kses( $important_phrase, array( 'strong' => array() ) ); ?></p>
+			<div style="margin-top:20px;padding:15px;background:#e8f5e9;border-radius:4px;border:1px solid #4caf50">
+				<h3 style="margin-top:0">💳 <?php esc_html_e( 'Setting Up Subscription Products', 'coinsub' ); ?></h3>
+				<p><strong><?php esc_html_e( 'To enable recurring payments for a product:', 'coinsub' ); ?></strong></p>
+				<ol style="line-height:1.6;margin-top:10px">
+					<li><?php echo wp_kses( __( 'Go to <strong>Products</strong> → Select the product you want to make a subscription', 'coinsub' ), array( 'strong' => array() ) ); ?></li>
+					<li><?php echo wp_kses( __( 'Click <strong>Edit</strong> and scroll to the <strong>Product Data</strong> section', 'coinsub' ), array( 'strong' => array() ) ); ?></li>
+					<li><?php echo wp_kses( sprintf( __( 'Check the <strong>%s</strong> checkbox', 'coinsub' ), esc_html( __( 'CoinSub Subscription', 'coinsub' ) ) ), array( 'strong' => array() ) ); ?></li>
+					<li><?php esc_html_e( 'Configure the subscription settings:', 'coinsub' ); ?>
+						<ul style="margin-top:8px">
+							<li><?php echo wp_kses( __( '<strong>Frequency:</strong> How often it repeats (Every, Every Other, Every Third, etc.)', 'coinsub' ), array( 'strong' => array() ) ); ?></li>
+							<li><?php echo wp_kses( __( '<strong>Interval:</strong> Time period (Day, Week, Month, Year)', 'coinsub' ), array( 'strong' => array() ) ); ?></li>
+							<li><?php echo wp_kses( __( '<strong>Duration:</strong> Number of payments (0 = Until Cancelled)', 'coinsub' ), array( 'strong' => array() ) ); ?></li>
+						</ul>
+					</li>
+					<li><?php echo wp_kses( __( 'Click <strong>Update</strong> to save the product', 'coinsub' ), array( 'strong' => array() ) ); ?></li>
+				</ol>
+				<p style="margin-bottom:0;font-size:13px;color:#2e7d32"><?php echo wp_kses( __( '<strong>Note:</strong> Each product must be configured individually. Customers can manage their subscriptions from their account page.', 'coinsub' ), array( 'strong' => array() ) ); ?></p>
+			</div>
+			<div style="margin-top:20px;padding:15px;background:#eef7fe;border-radius:4px;border:1px solid #0284c7">
+				<h3 style="margin-top:0"><?php esc_html_e( 'Add Tokens for Refunds', 'coinsub' ); ?></h3>
+				<p><?php esc_html_e( 'Refunds use the same network and token as the original payment (defaults to USDC on Polygon if unavailable).', 'coinsub' ); ?></p>
+				<p><?php esc_html_e( "To process refunds, you'll need sufficient tokens in your merchant wallet on the same network as the original payment. If you don't have enough tokens, you can purchase them through Meld.", 'coinsub' ); ?></p>
+				<p><?php echo wp_kses( __( 'To find your wallet address: in your dashboard, open the <strong>Wallet</strong> tab and copy your wallet address from there.', 'coinsub' ), array( 'strong' => array() ) ); ?></p>
+				<p style="margin-bottom:10px"><a class="button button-primary" href="<?php echo esc_url( $meld_url ); ?>" style="background:#2271b1;border-color:#2271b1" target="_blank" rel="noopener"><?php esc_html_e( 'Buy Tokens via Meld', 'coinsub' ); ?></a></p>
+				<p style="margin-bottom:0;font-size:12px;color:#666"><?php echo wp_kses( __( '<strong>Tip:</strong>', 'coinsub' ), array( 'strong' => array() ) ); ?> <?php esc_html_e( 'Keep a small reserve of tokens (especially USDC on Polygon as the default fallback) to cover refunds quickly. Click the button above to add funds via Meld.', 'coinsub' ); ?></p>
+			</div>
+		</div>
+		<?php
+		return ob_get_clean();
 	}
 
 	/**
