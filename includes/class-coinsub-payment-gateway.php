@@ -1172,7 +1172,8 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 		error_log( '✅ CoinSub Refund - API response received: ' . json_encode( $refund_result ) );
 
 		// Success - add order note and update status
-		$refund_id = $refund_result['refund_id'] ?? $refund_result['transfer_id'] ?? 'N/A';
+		$refund_id   = $refund_result['refund_id'] ?? $refund_result['transfer_id'] ?? 'N/A';
+		$transfer_id = $refund_result['transfer_id'] ?? $refund_result['refund_id'] ?? null;
 
 		// Get network name for display
 		$network_name = $this->get_network_name( $chain_id );
@@ -1190,7 +1191,7 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 
 		$order->add_order_note( $refund_note );
 
-		// Store refund details and mark as pending
+		// Store refund details and mark as pending (for Transfer API webhook: match by transfer_id when type=transfer/failed_transfer)
 		$order->update_meta_data( '_coinsub_refund_pending', 'yes' );
 		$order->update_meta_data( '_coinsub_refund_status', 'pending' );
 		$order->update_meta_data( '_coinsub_refund_chain_id', $chain_id );
@@ -1199,6 +1200,10 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 		if ( ! empty( $refund_id ) ) {
 			$order->update_meta_data( '_coinsub_refund_id', $refund_id );
 			error_log( '✅ CoinSub Refund - Stored refund ID: ' . $refund_id );
+		}
+		if ( ! empty( $transfer_id ) ) {
+			$order->update_meta_data( '_coinsub_pending_transfer_id', $transfer_id );
+			error_log( '✅ CoinSub Refund - Stored pending transfer_id for webhook match: ' . $transfer_id );
 		}
 
 		// Don't mark as refunded yet - wait for transfer webhook confirmation

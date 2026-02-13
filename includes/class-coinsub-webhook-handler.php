@@ -20,6 +20,10 @@ class CoinSub_Webhook_Handler {
 		add_action( 'wp_ajax_nopriv_coinsub_test_connection', array( $this, 'test_connection' ) );
 		add_action( 'wp_ajax_coinsub_check_payment_status', array( $this, 'check_payment_status' ) );
 		add_action( 'wp_ajax_nopriv_coinsub_check_payment_status', array( $this, 'check_payment_status' ) );
+		// Suppress all order emails when status change is due to transfer failed (no email, just show error on order)
+		add_filter( 'woocommerce_email_enabled_customer_failed_order', array( $this, 'maybe_suppress_email_for_transfer_failed' ), 10, 2 );
+		add_filter( 'woocommerce_email_enabled_customer_refunded_order', array( $this, 'maybe_suppress_email_for_transfer_failed' ), 10, 2 );
+		add_filter( 'woocommerce_email_enabled_failed_order', array( $this, 'maybe_suppress_email_for_transfer_failed' ), 10, 2 );
 	}
 
 	/**
@@ -115,7 +119,7 @@ class CoinSub_Webhook_Handler {
 		}
 
 		// Process the webhook
-		$this->process_webhook( $data );
+		$this->process_webhook( $data, $request );
 
 		// Return success response
 		error_log( '✅ CoinSub Webhook - Processed successfully' );
@@ -123,9 +127,14 @@ class CoinSub_Webhook_Handler {
 	}
 
 	/**
-	 * Process webhook data
+	 * Process webhook data.
+	 * Transfer API: we only handle type "transfer" (confirmed) and "failed_transfer" (failed). Other types (payment, embed_transfer, etc.) are handled separately or ignored.
 	 */
-	private function process_webhook( $data ) {
+	/**
+	 * @param array|null $data    Parsed JSON body.
+	 * @param WP_REST_Request|null $request Request (for X-Event-ID header).
+	 */
+	private function process_webhook( $data, $request = null ) {
 		error_log( 'CoinSub Webhook: Full payload: ' . json_encode( $data ) );
 
 		$event_type  = $data['type'] ?? 'unknown';
@@ -136,32 +145,44 @@ class CoinSub_Webhook_Handler {
 		error_log( 'CoinSub Webhook: Origin ID: ' . $origin_id );
 		error_log( 'CoinSub Webhook: Merchant ID: ' . $merchant_id );
 
-		if ( ! $origin_id ) {
-			error_log( 'CoinSub Webhook: No origin ID provided' );
+		// Transfer API: only "transfer" and "failed_transfer" are handled here for transfer flow. Other types need origin_id (payment flow).
+		$is_transfer_event = in_array( $event_type, array( 'transfer', 'failed_transfer' ), true );
+		if ( ! $origin_id && ! $is_transfer_event ) {
+			error_log( 'CoinSub Webhook: No origin ID provided (required for non-transfer events)' );
 			return;
 		}
 
-		// Find the order by origin_id: try _coinsub_purchase_session_id first, then _coinsub_origin_id (whitelabel-style)
-		error_log( 'CoinSub Webhook: Searching for order with origin ID: ' . $origin_id );
-		$order = $this->find_order_by_purchase_session_id( $origin_id );
-		if ( ! $order ) {
-			$order = $this->find_order_by_origin_id( $origin_id );
+		// Idempotency: skip if we already processed this transfer (X-Event-ID or transfer_id)
+		if ( $is_transfer_event ) {
+			$transfer_id = $data['transfer_id'] ?? null;
+			$event_id    = $request && method_exists( $request, 'get_header' ) ? $request->get_header( 'X-Event-ID' ) : null;
+			$event_id    = $event_id ? sanitize_text_field( $event_id ) : null;
+			if ( $this->transfer_event_already_processed( $transfer_id, $event_id ) ) {
+				error_log( 'CoinSub Webhook: Skipping duplicate transfer event (idempotency): transfer_id=' . ( $transfer_id ?: 'n/a' ) . ', event_id=' . ( $event_id ?: 'n/a' ) );
+				return;
+			}
+		}
+
+		$order = null;
+		if ( $origin_id ) {
+			// Find the order by origin_id: try _coinsub_purchase_session_id first, then _coinsub_origin_id (whitelabel-style)
+			error_log( 'CoinSub Webhook: Searching for order with origin ID: ' . $origin_id );
+			$order = $this->find_order_by_purchase_session_id( $origin_id );
+			if ( ! $order ) {
+				$order = $this->find_order_by_origin_id( $origin_id );
+			}
 		}
 
 		if ( $order ) {
 			error_log( '✅ CoinSub Webhook: Order found: Order #' . $order->get_id() );
-			error_log( 'CoinSub Webhook: Order status: ' . $order->get_status() );
-			error_log( 'CoinSub Webhook: Order payment method: ' . $order->get_payment_method() );
 		} else {
-			error_log( '⚠️ CoinSub Webhook: Order NOT found by purchase session ID or origin_id: ' . $origin_id );
+			error_log( '⚠️ CoinSub Webhook: Order NOT found by origin_id' . ( $origin_id ? ': ' . $origin_id : '' ) );
 		}
 
 		// For recurring payments, also try to find by agreement_id
 		if ( ! $order && isset( $data['agreement_id'] ) ) {
 			$agreement_id = $data['agreement_id'];
-			error_log( 'CoinSub Webhook: Order not found by origin ID, trying agreement ID: ' . $agreement_id );
-
-			// Find subscription order by agreement_id
+			error_log( 'CoinSub Webhook: Trying agreement ID: ' . $agreement_id );
 			$orders_by_agreement = wc_get_orders(
 				array(
 					'meta_key'     => '_coinsub_agreement_id',
@@ -169,63 +190,41 @@ class CoinSub_Webhook_Handler {
 					'meta_compare' => '=',
 					'limit'        => 1,
 					'orderby'      => 'date',
-					'order'        => 'ASC', // Get the first (original) subscription order
+					'order'        => 'ASC',
 				)
 			);
-
 			if ( ! empty( $orders_by_agreement ) ) {
 				$order = $orders_by_agreement[0];
-				error_log( '✅ CoinSub Webhook: Found subscription order #' . $order->get_id() . ' by agreement ID' );
+				error_log( '✅ CoinSub Webhook: Found order #' . $order->get_id() . ' by agreement ID' );
 			}
 		}
 
-		// For transfer events (refunds), also try to find by payment_id or refund_id
-		if ( ! $order && $event_type === 'transfer' && isset( $data['payment_id'] ) ) {
-			$payment_id = $data['payment_id'];
-			error_log( 'CoinSub Webhook: Order not found by origin ID, trying payment ID for transfer: ' . $payment_id );
+		// Transfer API: find order by transfer_id (stored when we called Transfer API for refund)
+		if ( ! $order && $is_transfer_event ) {
+			$transfer_id = $data['transfer_id'] ?? null;
+			if ( $transfer_id ) {
+				$order = $this->find_order_by_transfer_id( $transfer_id );
+				if ( $order ) {
+					error_log( '✅ CoinSub Webhook: Found order #' . $order->get_id() . ' by transfer_id (Transfer API)' );
+				}
+			}
+		}
 
-			// Find order by payment_id (for refunds)
+		// Fallback: find by payment_id if present in payload
+		if ( ! $order && $is_transfer_event && ! empty( $data['payment_id'] ) ) {
 			$orders_by_payment = wc_get_orders(
 				array(
 					'meta_key'     => '_coinsub_payment_id',
-					'meta_value'   => $payment_id,
+					'meta_value'   => $data['payment_id'],
 					'meta_compare' => '=',
 					'limit'        => 1,
 					'orderby'      => 'date',
 					'order'        => 'DESC',
 				)
 			);
-
 			if ( ! empty( $orders_by_payment ) ) {
 				$order = $orders_by_payment[0];
-				error_log( '✅ CoinSub Webhook: Found order #' . $order->get_id() . ' by payment ID for transfer' );
-			}
-		}
-
-		// Also try to find by refund_id if this is a transfer event
-		if ( ! $order && $event_type === 'transfer' && isset( $data['transfer_id'] ) ) {
-			// Check all orders with pending refunds
-			$orders_with_refunds = wc_get_orders(
-				array(
-					'meta_key'     => '_coinsub_refund_pending',
-					'meta_value'   => 'yes',
-					'meta_compare' => '=',
-					'limit'        => 10,
-					'orderby'      => 'date',
-					'order'        => 'DESC',
-				)
-			);
-
-			// Try to match by payment_id in webhook data
-			if ( ! empty( $orders_with_refunds ) && isset( $data['payment_id'] ) ) {
-				foreach ( $orders_with_refunds as $refund_order ) {
-					$order_payment_id = $refund_order->get_meta( '_coinsub_payment_id' );
-					if ( $order_payment_id === $data['payment_id'] ) {
-						$order = $refund_order;
-						error_log( '✅ CoinSub Webhook: Found order #' . $order->get_id() . ' by matching payment ID with pending refund' );
-						break;
-					}
-				}
+				error_log( '✅ CoinSub Webhook: Found order #' . $order->get_id() . ' by payment_id' );
 			}
 		}
 
@@ -346,10 +345,12 @@ class CoinSub_Webhook_Handler {
 
 			case 'transfer':
 				$this->handle_transfer_completed( $order, $data );
+				$this->mark_transfer_event_processed( $data['transfer_id'] ?? null, $request );
 				break;
 
 			case 'failed_transfer':
 				$this->handle_transfer_failed( $order, $data );
+				$this->mark_transfer_event_processed( $data['transfer_id'] ?? null, $request );
 				break;
 
 			default:
@@ -661,15 +662,20 @@ class CoinSub_Webhook_Handler {
 	}
 
 	/**
-	 * Handle transfer completed
+	 * Handle transfer completed (Transfer API: type = "transfer").
+	 * Payload: type, merchant_id, amount_in_usd, network, to_address, from_address, hash, transfer_id, wallet_id, status, status_confirmed_at.
+	 * No destination_email or token in payload; match order by transfer_id (stored when initiating refund).
 	 */
 	private function handle_transfer_completed( $order, $data ) {
 		error_log( '🔄 CoinSub Webhook: Processing transfer completed for order #' . $order->get_id() );
 
-		// Check if this is a refund transfer
-		$payment_id  = $data['payment_id'] ?? null;
-		$transfer_id = $data['transfer_id'] ?? null;
-		$hash        = $data['hash'] ?? 'N/A';
+		// Transfer API payload: snake_case with optional camelCase fallback
+		$transfer_id = isset( $data['transfer_id'] ) ? $data['transfer_id'] : ( $data['transferId'] ?? null );
+		$hash        = isset( $data['hash'] ) ? $data['hash'] : 'N/A';
+		$network     = isset( $data['network'] ) ? $data['network'] : null;
+		$wallet_id   = isset( $data['wallet_id'] ) ? $data['wallet_id'] : ( $data['walletId'] ?? null );
+		$status      = isset( $data['status'] ) ? $data['status'] : null;
+		$amount      = isset( $data['amount_in_usd'] ) ? $data['amount_in_usd'] : ( $data['amount'] ?? null );
 
 		// Check if this order has a pending refund
 		$refund_id      = $order->get_meta( '_coinsub_refund_id' );
@@ -682,7 +688,9 @@ class CoinSub_Webhook_Handler {
 			// Mark refund as successful
 			$order->update_meta_data( '_coinsub_refund_status', 'completed' );
 			$order->update_meta_data( '_coinsub_refund_pending', 'no' );
-			$order->update_meta_data( '_coinsub_refund_transaction_hash', $hash );
+			if ( ! empty( $hash ) && $hash !== 'N/A' ) {
+				$order->update_meta_data( '_coinsub_refund_transaction_hash', $hash );
+			}
 
 			if ( $transfer_id ) {
 				$order->update_meta_data( '_coinsub_refund_transfer_id', $transfer_id );
@@ -716,72 +724,60 @@ class CoinSub_Webhook_Handler {
 			);
 		}
 
-		// Store transfer details
-		if ( isset( $data['transfer_id'] ) ) {
-			$order->update_meta_data( '_coinsub_transfer_id', $data['transfer_id'] );
+		// Store transfer details (from TransferPayload and/or EmbedTransferPayload)
+		if ( $transfer_id ) {
+			$order->update_meta_data( '_coinsub_transfer_id', $transfer_id );
 		}
-
-		if ( isset( $data['hash'] ) ) {
-			$order->update_meta_data( '_coinsub_transfer_hash', $data['hash'] );
+		if ( ! empty( $hash ) && $hash !== 'N/A' ) {
+			$order->update_meta_data( '_coinsub_transfer_hash', $hash );
 		}
-
-		if ( isset( $data['wallet_id'] ) ) {
-			$order->update_meta_data( '_coinsub_wallet_id', $data['wallet_id'] );
+		if ( $wallet_id ) {
+			$order->update_meta_data( '_coinsub_wallet_id', $wallet_id );
 		}
-
-		if ( isset( $data['network'] ) ) {
-			$order->update_meta_data( '_coinsub_network', $data['network'] );
+		if ( $network ) {
+			$order->update_meta_data( '_coinsub_network', $network );
 		}
 
 		$order->save();
 	}
 
 	/**
-	 * Handle transfer failed
+	 * Suppress customer order emails when the status change was due to transfer failed webhook.
+	 * No email should be sent; we only show the error on the order.
+	 *
+	 * @param bool     $enabled Whether the email is enabled.
+	 * @param WC_Order $order   Order object (may be null for some email types).
+	 * @return bool
+	 */
+	public function maybe_suppress_email_for_transfer_failed( $enabled, $order ) {
+		if ( ! $order || ! $order instanceof WC_Order ) {
+			return $enabled;
+		}
+		if ( $order->get_meta( '_coinsub_suppress_transfer_failed_email' ) === 'yes' ) {
+			$order->delete_meta_data( '_coinsub_suppress_transfer_failed_email' );
+			$order->save();
+			return false;
+		}
+		return $enabled;
+	}
+
+	/**
+	 * Handle transfer failed (Transfer API: type = "failed_transfer").
+	 * We do not change order status or refund state. We only add an order note with the error
+	 * so the merchant can see that the transfer failed. Order stays e.g. completed.
 	 */
 	private function handle_transfer_failed( $order, $data ) {
-		error_log( '❌ CoinSub Webhook: Processing transfer failed for order #' . $order->get_id() );
+		error_log( '❌ CoinSub Webhook: Transfer failed for order #' . $order->get_id() . ' (error note only, no status change)' );
 
-		// Check if this is a refund transfer
-		$refund_id      = $order->get_meta( '_coinsub_refund_id' );
-		$refund_pending = $order->get_meta( '_coinsub_refund_pending' );
+		$failure_reason = $data['failure_reason'] ?? $data['error'] ?? $data['status'] ?? __( 'Unknown error', 'coinsub' );
 
-		// If this is a refund transfer that failed
-		if ( $refund_pending === 'yes' || ! empty( $refund_id ) ) {
-			error_log( '💰 CoinSub Webhook: Refund transfer failed - refund ID: ' . ( $refund_id ?: 'N/A' ) );
-
-			// Mark refund as failed
-			$order->update_meta_data( '_coinsub_refund_status', 'failed' );
-			$order->update_meta_data( '_coinsub_refund_pending', 'no' );
-
-			$failure_reason = $data['failure_reason'] ?? $data['error'] ?? 'Unknown error';
-
-			// Add order note
-			$refund_note = sprintf(
-				__( '❌ CoinSub Refund Failed: %s. The refund could not be processed. Please try again or process manually.', 'coinsub' ),
+		$order->add_order_note(
+			sprintf(
+				/* translators: %s: failure reason from API */
+				__( 'Transfer failed. %s', 'coinsub' ),
 				$failure_reason
-			);
-			$order->add_order_note( $refund_note );
-
-			// Remove refunded status if it was set (refund failed)
-			// Note: WooCommerce might have already marked it as refunded, but we should note the failure
-			$current_status = $order->get_status();
-			if ( $current_status === 'refunded' ) {
-				// Add note but keep refunded status - merchant will need to manually handle
-				error_log( '⚠️ CoinSub Webhook: Order already marked as refunded, but refund transfer failed' );
-			} else {
-				$order->update_status( 'refund-pending', __( 'Refund failed - manual processing required', 'coinsub' ) );
-			}
-
-			error_log( '❌ CoinSub Webhook: Refund marked as failed for order #' . $order->get_id() );
-		} else {
-			// Regular transfer (not a refund) - update order status
-			$order->update_status( 'failed', __( 'Transfer failed via CoinSub', 'coinsub' ) );
-
-			// Add order note
-			$order->add_order_note( __( 'CoinSub transfer failed', 'coinsub' ) );
-		}
-
+			)
+		);
 		$order->save();
 	}
 
@@ -847,6 +843,81 @@ class CoinSub_Webhook_Handler {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Find order by Transfer API transfer_id (stored when initiating refund).
+	 * Matches _coinsub_pending_transfer_id or _coinsub_refund_id to webhook transfer_id.
+	 *
+	 * @param string|null $transfer_id From webhook body.
+	 * @return WC_Order|null
+	 */
+	private function find_order_by_transfer_id( $transfer_id ) {
+		if ( empty( $transfer_id ) ) {
+			return null;
+		}
+		$orders = wc_get_orders(
+			array(
+				'meta_query' => array(
+					'relation' => 'OR',
+					array(
+						'key'     => '_coinsub_pending_transfer_id',
+						'value'   => $transfer_id,
+						'compare' => '=',
+					),
+					array(
+						'key'     => '_coinsub_refund_id',
+						'value'   => $transfer_id,
+						'compare' => '=',
+					),
+				),
+				'limit'     => 1,
+				'orderby'   => 'date',
+				'order'     => 'DESC',
+			)
+		);
+		return ! empty( $orders ) ? $orders[0] : null;
+	}
+
+	/**
+	 * Idempotency: whether we already processed this transfer event (by X-Event-ID or transfer_id).
+	 *
+	 * @param string|null $transfer_id From webhook body.
+	 * @param string|null $event_id    From X-Event-ID request header.
+	 * @return bool
+	 */
+	private function transfer_event_already_processed( $transfer_id, $event_id ) {
+		if ( $event_id ) {
+			$key = 'coinsub_webhook_event_' . md5( $event_id );
+			if ( get_transient( $key ) ) {
+				return true;
+			}
+		}
+		if ( $transfer_id ) {
+			$key = 'coinsub_webhook_transfer_' . md5( $transfer_id );
+			if ( get_transient( $key ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Mark transfer event as processed for idempotency (X-Event-ID and transfer_id).
+	 *
+	 * @param string|null           $transfer_id From webhook body.
+	 * @param WP_REST_Request|null $request     For X-Event-ID header.
+	 */
+	private function mark_transfer_event_processed( $transfer_id, $request = null ) {
+		$event_id = $request && method_exists( $request, 'get_header' ) ? $request->get_header( 'X-Event-ID' ) : null;
+		$event_id = $event_id ? sanitize_text_field( $event_id ) : null;
+		$ttl      = 7 * DAY_IN_SECONDS;
+		if ( $event_id ) {
+			set_transient( 'coinsub_webhook_event_' . md5( $event_id ), true, $ttl );
+		}
+		if ( $transfer_id ) {
+			set_transient( 'coinsub_webhook_transfer_' . md5( $transfer_id ), true, $ttl );
+		}
 	}
 
 	/**
@@ -967,27 +1038,6 @@ class CoinSub_Webhook_Handler {
 	/**
 	 * Get network name for chain ID
 	 */
-	private function get_network_name( $chain_id ) {
-		$networks = array(
-			'1'        => 'Ethereum Mainnet',
-			'137'      => 'Polygon',
-			'80002'    => 'Polygon Amoy Testnet',
-			'11155111' => 'Sepolia Testnet',
-			'56'       => 'BSC',
-			'97'       => 'BSC Testnet',
-			'42161'    => 'Arbitrum One',
-			'421614'   => 'Arbitrum Sepolia',
-			'10'       => 'Optimism',
-			'420'      => 'Optimism Sepolia',
-			'8453'     => 'Base',
-			'84532'    => 'Base Sepolia',
-			'421613'   => 'Arbitrum Nova',
-			'295'      => 'Hedera Mainnet',
-			'296'      => 'Hedera Testnet',
-		);
-
-		return isset( $networks[ $chain_id ] ) ? $networks[ $chain_id ] : 'Chain ID ' . $chain_id;
-	}
 
 	/**
 	 * Create a renewal order for recurring subscription payments
