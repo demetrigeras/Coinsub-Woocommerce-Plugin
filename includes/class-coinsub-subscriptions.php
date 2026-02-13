@@ -277,8 +277,8 @@ class CoinSub_Subscriptions {
 		$frequency_text = $this->get_subscription_frequency_text( $order );
 		$duration_text  = $this->get_subscription_duration_text( $order );
 		$duration_raw   = $this->get_subscription_duration_raw( $order );
-		$start_date   = $order->get_date_created() ? $order->get_date_created()->date_i18n( wc_date_format() ) : '—';
-		$next_payment = $this->get_next_payment_for_display( $order, $agreement_id );
+		$start_date     = $order->get_date_created() ? $order->get_date_created()->date_i18n( wc_date_format() ) : '—';
+		$next_payment   = $this->get_next_payment_for_display( $order, $agreement_id );
 		if ( empty( $duration_raw ) || $duration_raw === '0' ) {
 			$regularity_text = $frequency_text;
 		} else {

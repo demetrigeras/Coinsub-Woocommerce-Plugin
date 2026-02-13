@@ -313,27 +313,27 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 			error_log( '🏗️ CoinSub - init_form_fields() called' );
 		}
 		$this->form_fields = array(
-			'enabled'           => array(
+			'enabled'     => array(
 				'title'   => __( 'Enable/Disable', 'coinsub' ),
 				'type'    => 'checkbox',
 				'label'   => __( 'Enable Coinsub Crypto Payments', 'coinsub' ),
 				'default' => 'no',
 			),
 			// Environment selection removed for production plugin; base URL fixed to dev-api in code
-			'merchant_id'       => array(
+			'merchant_id' => array(
 				'title'       => __( 'Merchant ID', 'coinsub' ),
 				'type'        => 'text',
 				'description' => __( 'Get this from your merchant dashboard', 'coinsub' ),
 				'default'     => '',
 				'placeholder' => 'e.g., 12345678-abcd-1234-abcd-123456789abc',
 			),
-			'api_key'           => array(
+			'api_key'     => array(
 				'title'       => __( 'API Key', 'coinsub' ),
 				'type'        => 'password',
 				'description' => __( 'Get this from your merchant dashboard', 'coinsub' ),
 				'default'     => '',
 			),
-			'webhook_url'       => array(
+			'webhook_url' => array(
 				'title'             => __( 'Webhook URL', 'coinsub' ),
 				'type'              => 'text',
 				'description'       => __( 'Copy this URL and add it to your merchant dashboard. This URL receives payment confirmations and automatically updates order status to "Processing" when payment is complete.', 'coinsub' ),
@@ -364,15 +364,15 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 	 * @return string HTML for the instructions block.
 	 */
 	public function get_setup_instructions_html() {
-		$dashboard_url = 'https://app.coinsub.io';
-		$meld_url      = $this->get_meld_onramp_url();
-		$host          = parse_url( $dashboard_url, PHP_URL_HOST );
-		$dashboard_link = '<a href="' . esc_url( $dashboard_url ) . '" target="_blank" rel="noopener">' . esc_html( $host ?: $dashboard_url ) . '</a>';
-		$login_phrase  = sprintf( __( 'Log in to your account at %s', 'coinsub' ), $dashboard_link );
+		$dashboard_url        = 'https://app.coinsub.io';
+		$meld_url             = $this->get_meld_onramp_url();
+		$host                 = parse_url( $dashboard_url, PHP_URL_HOST );
+		$dashboard_link       = '<a href="' . esc_url( $dashboard_url ) . '" target="_blank" rel="noopener">' . esc_html( $host ?: $dashboard_url ) . '</a>';
+		$login_phrase         = sprintf( __( 'Log in to your account at %s', 'coinsub' ), $dashboard_link );
 		$nav_dashboard_phrase = __( 'Navigate to <strong>Settings</strong> in your dashboard', 'coinsub' );
-		$go_back_phrase      = __( 'Go back to your dashboard <strong>Settings</strong>', 'coinsub' );
+		$go_back_phrase       = __( 'Go back to your dashboard <strong>Settings</strong>', 'coinsub' );
 		$important_phrase     = __( '<strong>⚠️ Important:</strong> Coinsub works alongside other payment methods. Make sure to complete ALL steps above, especially the webhook configuration!', 'coinsub' );
-		$enable_label        = __( 'Enable Coinsub Crypto Payments', 'coinsub' );
+		$enable_label         = __( 'Enable Coinsub Crypto Payments', 'coinsub' );
 
 		ob_start();
 		?>
@@ -388,7 +388,17 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 			</ol>
 			<h4 style="margin:1.5em 0 .5em"><?php esc_html_e( 'Step 2: Configure Webhook (CRITICAL)', 'coinsub' ); ?></h4>
 			<ol style="line-height:1.6;margin-top:0">
-				<li><?php echo wp_kses( __( 'Copy the <strong>Webhook URL</strong> shown below (it will look like: <code>https://yoursite.com/wp-json/coinsub/v1/webhook</code>)', 'coinsub' ), array( 'strong' => array(), 'code' => array() ) ); ?></li>
+				<li>
+				<?php
+				echo wp_kses(
+					__( 'Copy the <strong>Webhook URL</strong> shown below (it will look like: <code>https://yoursite.com/wp-json/coinsub/v1/webhook</code>)', 'coinsub' ),
+					array(
+						'strong' => array(),
+						'code'   => array(),
+					)
+				);
+				?>
+					</li>
 				<li><?php echo $go_back_phrase; ?></li>
 				<li><?php echo wp_kses( __( 'Find the <strong>Webhook URL</strong> field', 'coinsub' ), array( 'strong' => array() ) ); ?></li>
 				<li><?php echo wp_kses( __( '<strong>Paste your webhook URL</strong> into that field and save', 'coinsub' ), array( 'strong' => array() ) ); ?></li>
