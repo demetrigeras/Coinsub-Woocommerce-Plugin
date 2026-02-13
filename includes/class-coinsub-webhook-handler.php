@@ -871,9 +871,9 @@ class CoinSub_Webhook_Handler {
 						'compare' => '=',
 					),
 				),
-				'limit'     => 1,
-				'orderby'   => 'date',
-				'order'     => 'DESC',
+				'limit'      => 1,
+				'orderby'    => 'date',
+				'order'      => 'DESC',
 			)
 		);
 		return ! empty( $orders ) ? $orders[0] : null;
