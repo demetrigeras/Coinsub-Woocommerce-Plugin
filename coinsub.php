@@ -350,72 +350,13 @@ function coinsub_ajax_process_payment() {
 		wp_send_json_error( 'Cart is empty' );
 	}
 
-	// Check for an existing in-progress CoinSub order in session to prevent duplicates
-	$existing_order_id = WC()->session->get( 'coinsub_order_id' );
-	if ( $existing_order_id ) {
-		$existing_order = wc_get_order( $existing_order_id );
-		if ( $existing_order && ! is_wp_error( $existing_order ) ) {
-			$status = $existing_order->get_status();
-			$pm     = $existing_order->get_payment_method();
-			if ( $pm === 'coinsub' && in_array( $status, array( 'pending', 'on-hold' ) ) ) {
-				$existing_checkout = $existing_order->get_meta( '_coinsub_checkout_url' );
-				if ( $existing_checkout ) {
-					wp_send_json_success(
-						array(
-							'result'   => 'success',
-							'redirect' => $existing_checkout,
-							'order_id' => $existing_order_id,
-							'reused'   => true,
-						)
-					);
-				}
-			}
-		}
-	}
-
-	// Add a short-lived lock to prevent concurrent requests from creating duplicates
+	// Always create new order and new purchase session - never reuse if user left and came back.
+	// Short-lived lock to prevent double-click from creating duplicate orders
 	$lock_key      = 'coinsub_order_lock';
 	$lock_time     = time();
 	$existing_lock = WC()->session->get( $lock_key );
 	if ( $existing_lock && ( $lock_time - intval( $existing_lock ) ) < 5 ) {
-		// Try to find the most recent CoinSub order for this session/customer
-		$orders = wc_get_orders(
-			array(
-				'limit'          => 1,
-				'orderby'        => 'date',
-				'order'          => 'DESC',
-				'payment_method' => 'coinsub',
-			)
-		);
-		if ( ! empty( $orders ) ) {
-			$o = $orders[0];
-			if ( in_array( $o->get_status(), array( 'pending', 'on-hold' ) ) ) {
-				$url = $o->get_meta( '_coinsub_checkout_url' );
-				if ( $url ) {
-					WC()->session->set( 'coinsub_order_id', $o->get_id() );
-					wp_send_json_success(
-						array(
-							'result'   => 'success',
-							'redirect' => $url,
-							'order_id' => $o->get_id(),
-							'reused'   => true,
-						)
-					);
-				}
-			} elseif ( in_array( $o->get_status(), array( 'processing', 'completed' ) ) ) {
-				// If the most recent order is already paid, send user to order received page
-				wp_send_json_success(
-					array(
-						'result'       => 'success',
-						'redirect'     => $o->get_checkout_order_received_url(),
-						'order_id'     => $o->get_id(),
-						'already_paid' => true,
-					)
-				);
-			}
-		}
-		// If none found, tell client to wait and retry
-		wp_send_json_error( 'Another payment attempt is already in progress. Please wait a moment...' );
+		wp_send_json_error( __( 'Another payment attempt is in progress. Please wait a moment...', 'coinsub' ) );
 	}
 	WC()->session->set( $lock_key, $lock_time );
 

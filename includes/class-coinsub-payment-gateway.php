@@ -571,7 +571,7 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 
 			$order->update_status( 'on-hold', __( 'Awaiting crypto payment. Customer redirected to Coinsub checkout.', 'coinsub' ) );
 
-			WC()->cart->empty_cart();
+			// Keep cart - only clear on successful payment (webhook)
 			WC()->session->set( 'coinsub_order_id', null );
 
 			$checkout_url = $purchase_session['checkout_url'];

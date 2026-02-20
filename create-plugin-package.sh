@@ -5,8 +5,12 @@
 
 echo "🚀 Creating Coinsub Plugin Package..."
 
-# Create package directory
+# Clean any leftover artifacts from previous/interrupted runs - ensures fresh build each time
 PACKAGE_DIR="coinsub-plugin"
+rm -rf "$PACKAGE_DIR"
+rm -f coinsub.zip
+
+# Create package directory
 mkdir -p "$PACKAGE_DIR"
 
 # Copy main plugin file
