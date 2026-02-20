@@ -4,6 +4,183 @@ One-line description per function, organized by file; then **flows** (step-by-st
 
 ---
 
+# Where to start reading – start-to-finish run-through
+
+Use this order for a full presentation or to understand the plugin from scratch.
+
+1. **Entry point**  
+   **`coinsub.php`**  
+   - Read the plugin header (Plugin Name, Version, etc.).  
+   - Then **`coinsub_commerce_init()`**: WooCommerce check → webhook secret → `require_once` all includes → instantiate **CoinSub_Webhook_Handler**, **CoinSub_Order_Manager**, **WC_CoinSub_Cart_Sync** (front only), **CoinSub_Admin_Logs** (admin only) → `coinsub_force_traditional_checkout` on `template_redirect`.  
+   - Then **`coinsub_add_gateway_class()`**: adds `WC_Gateway_CoinSub` to WooCommerce payment methods.  
+   - Then **`coinsub_init_payment_gateway()`**: instantiates the gateway (hooked from WooCommerce).  
+   - Skim the AJAX handlers: **`coinsub_ajax_process_payment`** (checkout), **`coinsub_ajax_clear_cart_after_payment`**, **`coinsub_ajax_check_webhook_status`**, **`coinsub_ajax_get_latest_order_url`**, **`coinsub_heartbeat_received`** (real-time redirect after payment).
+
+2. **Payment gateway (checkout flow)**  
+   **`includes/class-coinsub-payment-gateway.php`**  
+   - **`__construct()`**: id, supports, settings, API client, hooks (settings save, HPOS, footer/head, refund UI, AJAX redirect).  
+   - **`init_form_fields()`**: enabled, merchant_id, api_key, webhook_url (read-only).  
+   - **`process_payment()`**: cart data → **`prepare_purchase_session_from_cart()`** → **API client `create_purchase_session()`** → store session/checkout URL and subscription/cart in order → set status on-hold → empty cart → return checkout URL.  
+   - **`payment_fields()`**: outputs description + checkout modal (see **coinsub-checkout-modal.php**).  
+   - **`process_refund()`**: get to_address (email/wallet), chain/token from order or API → **API client `refund_transfer_request()`** → store refund_id/transfer_id; webhook confirms later.  
+   - **`is_available()`**, **`can_refund()`**, **`needs_setup()`**: simple checks.
+
+3. **API client (outbound calls)**  
+   **`includes/class-coinsub-api-client.php`**  
+   - **`create_purchase_session()`**: POST `/purchase/session/start` → returns `purchase_session_id`, `checkout_url`.  
+   - **`refund_transfer_request()`**: POST `/merchants/transfer/request` with to_address, amount, chainId, token.  
+   - **`get_payment_details()`**, **`get_all_payments()`**: GET payments for chain/token or admin.
+
+4. **Checkout UI (frontend)**  
+   **`includes/coinsub-checkout-modal.php`**  
+   - Template and script: “Place order” → AJAX **`coinsub_process_payment`** → open Coinsub checkout URL (iframe or new tab) → poll/heartbeat for **`_coinsub_redirect_to_received`** → redirect to order-received page.
+
+5. **Webhooks (inbound)**  
+   **`includes/class-coinsub-webhook-handler.php`**  
+   - **`handle_webhook()`**: validate secret, JSON, optional signature → **`process_webhook()`**.  
+   - **`process_webhook()`**: dispatch by `type`; find order by **origin_id** (purchase session / origin), **agreement_id**, or **transfer_id** (refunds); idempotency for transfer events.  
+   - **`handle_payment_completed()`**: order to processing/completed, store payment/agreement/wallet/token/chain, set redirect flag, clear cart.  
+   - **`handle_transfer_completed()`**: for refunds → set refund meta and status.  
+   - **`handle_transfer_failed()`**: order note only (no status change).  
+   - **`handle_payment_failed()`**, **`handle_payment_cancelled()`**: set status and notes.
+
+6. **Orders and subscriptions**  
+   - **`includes/class-coinsub-order-manager.php`**: order status changes, display Coinsub/subscription info on order, cancel subscription button, refund handling (via gateway).  
+   - **`includes/class-coinsub-subscriptions.php`**: product meta (frequency/interval/duration), cart rules (subscription-only cart), renewal creation from webhook, cancel subscription (customer + admin).  
+   - **`includes/class-coinsub-cart-sync.php`**: keeps **`coinsub_cart_data`** in session for checkout.
+
+7. **Admin**  
+   - **`includes/class-coinsub-admin-subscriptions.php`**: admin subscription list/management.  
+   - **`includes/class-coinsub-admin-payments.php`**: admin payments list.  
+   - **`includes/class-coinsub-admin-logs.php`**: admin logging UI (if present).
+
+8. **Flows and API reference**  
+   - In this doc: **Part 2** (flows: checkout, refund, subscription, webhook, admin) and **Part 3 / Part 4** (outbound API calls and inbound endpoints). Use these to trace “who calls what” and “what hits the plugin from outside”.
+
+**Summary:** Start with **coinsub.php** (bootstrap and gateway registration), then **payment gateway** (checkout + refund), then **API client**, then **checkout modal**, then **webhook handler**, then **order manager** and **subscriptions**. Use **FUNCTION-BREAKDOWN.md** tables and flow sections to jump to specific functions and flows.
+
+---
+
+ # APIs used by the plugin (Coinsub + WooCommerce / WordPress)
+
+Quick reference for “what external/plugin APIs does this code use?”
+
+## 1. Coinsub API (external HTTP – `https://api.coinsub.io/v1`)
+
+All calls are in **`includes/class-coinsub-api-client.php`** using **`wp_remote_post()`** / **`wp_remote_get()`**. Headers: `Content-Type: application/json`, `Merchant-ID`, `API-Key` (and optional `Authorization: Bearer ...`).
+
+| Method | Endpoint | API client method | Used for |
+|--------|----------|--------------------|----------|
+| POST | `/purchase/session/start` | `create_purchase_session()` | Checkout: create session, get `purchase_session_id` and `checkout_url`. |
+| GET | `/purchase/status/{id}` | `get_purchase_session_status()` | Poll session status (e.g. order manager). |
+| POST | `/agreements/cancel/{agreement_id}` | `cancel_agreement()` | Cancel subscription (customer or admin). |
+| GET | `/agreements/{id}/retrieve_agreement` | `retrieve_agreement()` | Get agreement/next payment (view-order, admin). |
+| POST | `/merchants/transfer/request` | `refund_transfer_request()` | Refund: send to_address, amount, chainId, token. |
+| GET | `/payments/all` | `get_all_payments()` | List payments (admin subscription section). |
+| GET | `/payments/{payment_id}` | `get_payment_details()` | Single payment (e.g. chain/token for refund). |
+
+**Inbound from Coinsub:** Webhooks POST to your site at **`/wp-json/coinsub/v1/webhook`** (payment, failed_payment, cancellation, transfer, failed_transfer). No “Coinsub API” call from your side for that; they call you.
+
+---
+
+## 2. WooCommerce API (classes, functions, hooks)
+
+**Classes / objects**
+
+| API | Where used | Purpose |
+|-----|------------|---------|
+| `WC_Gateway_CoinSub` extends `WC_Payment_Gateway` | Gateway class | Payment method (checkout, refund, settings). |
+| `WC_Order` / `wc_get_order()` | Everywhere | Load order by ID; get meta, status, items, totals. |
+| `wc_create_order()` | coinsub.php (AJAX), webhook renewal | Create new order. |
+| `WC()->cart` | Gateway, cart-sync, coinsub.php, subscriptions | Cart contents, totals, empty_cart(), get_cart(). |
+| `WC()->session` | coinsub.php, gateway, cart-sync, webhook | Session data (e.g. `coinsub_order_id`, `coinsub_cart_data`). |
+| `WC_Coupon` | Gateway, cart-sync | Coupon/discount data. |
+| `WC_Order_Item_Shipping`, `WC_Order_Item_Fee` | Webhook (renewal order) | Add shipping/fee line items to renewal order. |
+
+**Functions**
+
+| Function | Typical use |
+|----------|-------------|
+| `wc_get_order( $id )` | Get order object. |
+| `wc_get_orders( $args )` | Query orders (meta_key, payment_method, status, etc.). |
+| `wc_create_order()` | Create new order. |
+| `wc_add_notice( $msg, $type )` | Checkout/cart notices (error, notice). |
+| `wc_price( $amount )` | Format price for display. |
+| `wc_clear_notices()` | Clear WooCommerce notices. |
+| `wc_date_format()` | Date format for display. |
+| `get_woocommerce_currency()` | Store currency. |
+| `wc_get_checkout_url()` | Checkout page URL. |
+| `wc_get_page_id( 'terms' )` | Terms page (e.g. gateway availability). |
+| `is_checkout()`, `is_wc_endpoint_url( 'order-received' )` | Page context. |
+
+**Options**
+
+| Option | Meaning |
+|--------|---------|
+| `woocommerce_coinsub_settings` | Gateway settings (enabled, merchant_id, api_key, webhook_url). |
+
+**Actions (add_action)**
+
+| Hook | Handler / purpose |
+|------|--------------------|
+| `plugins_loaded` | Bootstrap plugin (`coinsub_commerce_init`). |
+| `before_woocommerce_init` | Declare HPOS compatibility. |
+| `woocommerce_payment_gateways` | Register gateway class. |
+| `woocommerce_update_options_payment_gateways_coinsub` | Save gateway settings, update API client. |
+| `woocommerce_can_refund_order` | Allow refund for CoinSub orders. |
+| `woocommerce_order_status_changed` | Order manager: react to status changes. |
+| `woocommerce_admin_order_data_after_billing_address` | Order manager: show Coinsub info + subscription. |
+| `woocommerce_order_item_add_action_buttons` | Order manager: cancel subscription button. |
+| `woocommerce_add_to_cart_validation` | Subscriptions: validate cart (subscription rules). |
+| `woocommerce_check_cart_items` | Subscriptions: enforce subscription quantities. |
+| `woocommerce_order_details_after_order_table` | Subscriptions: view-order subscription block. |
+| `woocommerce_product_options_general_product_data` | Subscriptions: product subscription fields. |
+| `woocommerce_process_product_meta` | Subscriptions: save subscription meta. |
+| `woocommerce_add_to_cart`, `woocommerce_cart_item_removed`, etc. | Cart sync: recalc cart data. |
+| `woocommerce_checkout_update_order_review` | Cart sync: update on checkout. |
+| `woocommerce_feature_enabled` | Disable checkout block when Coinsub enabled. |
+| `woocommerce_is_checkout_block` | Force classic checkout when Coinsub enabled. |
+
+**Filters (add_filter)**
+
+| Hook | Purpose |
+|------|---------|
+| `woocommerce_gateway_icon` | Gateway icon HTML. |
+| `woocommerce_order_item_display_meta_key` | Customize meta key display (refund). |
+
+---
+
+## 3. WordPress API (used by the plugin)
+
+**Core**
+
+| API | Use |
+|-----|-----|
+| `get_option()` / `add_option()` | `coinsub_webhook_secret`, `woocommerce_coinsub_settings`. |
+| `add_action()` / `add_filter()` | Hooks. |
+| `apply_filters( 'active_plugins', ... )` | Check if WooCommerce is active. |
+| `wp_remote_post()` / `wp_remote_get()` | Coinsub API HTTP calls. |
+| `wp_remote_retrieve_body()` / `wp_remote_retrieve_response_code()` | Parse API response. |
+| `is_wp_error()` | Check API/order errors. |
+| `wp_send_json_success()` / `wp_send_json_error()` | AJAX responses. |
+| `wp_verify_nonce()` | AJAX security. |
+| `wp_die()` | AJAX failure. |
+| `rest_url()`, `register_rest_route()` | Webhook REST route. |
+| `add_rewrite_rule()`, `flush_rewrite_rules()` | Webhook URL (activation). |
+| `wp_add_privacy_policy_content()` | Privacy policy text. |
+| `load_plugin_textdomain()` | Translations. |
+| `plugin_dir_path()` / `plugin_dir_url()` | Paths (constants). |
+| `heartbeat_received` / `heartbeat_nopriv_received` | Real-time webhook redirect. |
+
+**Admin**
+
+| API | Use |
+|-----|-----|
+| `get_current_screen()` | Order screen (refund UI). |
+| `admin_url()` | Links to settings. |
+
+---
+
 # Part 1: Function breakdowns by file
 
 ## coinsub.php
@@ -17,15 +194,11 @@ One-line description per function, organized by file; then **flows** (step-by-st
 | `coinsub_commerce_declare_hpos_compatibility()` | Declares HPOS (custom order tables) compatibility. |
 | `coinsub_add_payment_gateway()` | Adds `WC_Gateway_CoinSub` to the gateways array. |
 | `coinsub_init_payment_gateway()` | Instantiates the CoinSub payment gateway class. |
-| `coinsub_add_gateway_class()` | Registers `WC_Gateway_CoinSub` in WooCommerce payment methods (with debug logging). |
+| `coinsub_add_gateway_class()` | Registers `WC_Gateway_CoinSub` in WooCommerce payment methods. |
 | `coinsub_commerce_activate()` | On activation: adds webhook rewrite rule and flushes rewrite rules. |
 | `coinsub_commerce_deactivate()` | On deactivation: flushes rewrite rules. |
 | `coinsub_plugin_activate_secret()` | On plugin activation: creates `coinsub_webhook_secret` option if missing. |
-| `coinsub_force_availability()` | Filter: logs available gateways on checkout; returns gateways unchanged. |
 | `coinsub_always_show_refund_button()` | Filter: allows refund for CoinSub orders in processing/completed/on-hold. |
-| `coinsub_debug_checkout_process()` | Action on checkout process: logs POST and payment method. |
-| `coinsub_debug_before_checkout()` | Action before checkout: logs cart total and item count. |
-| `coinsub_debug_after_checkout()` | Action after checkout: logs that process finished. |
 | `coinsub_add_settings_link()` | Adds “Settings” link to plugin row on Plugins page. |
 | `coinsub_remove_plugin_meta_links()` | Removes default plugin row meta (e.g. “Visit plugin site”) for this plugin. |
 | `coinsub_ajax_process_payment()` | AJAX: verifies nonce, reuses or creates order, sets billing/cart, calls gateway `process_payment`, returns redirect URL or error. |
@@ -40,16 +213,14 @@ One-line description per function, organized by file; then **flows** (step-by-st
 
 | Method | Description |
 |--------|-------------|
-| `__construct()` | Registers REST webhook route, test route, AJAX actions for test/check status, and email-suppression filters for transfer failed. |
-| `register_webhook_endpoint()` | Registers POST `/coinsub/v1/webhook` and GET `/coinsub/v1/webhook/test` REST routes. |
-| `test_webhook_endpoint()` | GET handler: returns success, endpoint URL, and timestamp. |
+| `__construct()` | Registers REST webhook route and AJAX actions for test/check status. |
+| `register_webhook_endpoint()` | Registers POST `/coinsub/v1/webhook` REST route. |
 | `handle_webhook()` | Validates secret, parses JSON, optionally verifies signature, calls `process_webhook()`, returns 200. |
 | `process_webhook()` | Dispatches by `type`: finds order (origin_id, agreement_id, transfer_id, payment_id, metadata), checks idempotency for transfer events, then calls the right handler. |
 | `handle_payment_completed()` | Updates order to processing/completed, stores payment/agreement/transaction/chain/network/wallet/token/user data, sets redirect flag, clears cart/session. |
 | `handle_payment_failed()` | If order not already successful, sets status to failed and adds note with failure reason. |
 | `handle_payment_cancelled()` | Sets order status to cancelled and adds cancellation note. |
 | `handle_transfer_completed()` | For refund: sets refund meta, hash, transfer_id, note, status refunded; for other transfers: sets processing and transfer meta. |
-| `maybe_suppress_email_for_transfer_failed()` | Filter: disables customer failed/refunded and admin failed-order emails when `_coinsub_suppress_transfer_failed_email` is set, then removes that meta. |
 | `handle_transfer_failed()` | Adds a single order note with failure reason; does not change status or refund state. |
 | `find_order_by_origin_id()` | Returns order where `_coinsub_origin_id` equals given origin_id. |
 | `find_order_by_purchase_session_id()` | Finds order by `_coinsub_purchase_session_id`, with prefix variations (sess_, wc_, etc.). |
@@ -133,22 +304,7 @@ One-line description per function, organized by file; then **flows** (step-by-st
 |--------|-------------|
 | `__construct()` | Hooks: order status changed, display CoinSub info after billing, cancel subscription button, AJAX admin cancel, display subscription status. |
 | `handle_order_status_change()` | For CoinSub orders only: on processing/cancelled/refunded calls handle_order_processing, handle_order_cancellation, or handle_order_refund. |
-| `handle_order_processing()` | Logs processing; email logic disabled (WooCommerce handles). |
-| `send_custom_merchant_notification()` | Disabled; would send merchant email (logic left in file but returns early). |
-| `send_email_via_wp_mail()` | Validates to/from, configures PHPMailer, sends via wp_mail; on failure tries send_email_alternative. |
-| `configure_phpmailer()` | phpmailer_init: sets isMail and custom headers (X-Mailer, X-Priority). |
-| `send_email_alternative()` | Tries PHP mail() with headers; on failure logs and returns false. |
-| `send_simple_email()` | Runs mail diagnostics, tries basic mail(); on failure calls send_alternative_notification, add_email_failure_notice, log_failed_email_to_database. |
-| `run_server_mail_diagnostics()` | Logs mail() existence, sendmail_path, SMTP ini, PHPMailer state. |
-| `send_alternative_notification()` | Calls log_to_file, store_in_admin_options, try_external_notification. |
-| `log_to_file()` | Appends failed email to WP_CONTENT_DIR/coinsub-email-failures.log. |
-| `store_in_admin_options()` | Appends to option coinsub_failed_emails (last 10), with extract_order_id_from_subject. |
-| `try_external_notification()` | Placeholder for Slack/Discord; only logs. |
-| `extract_order_id_from_subject()` | Returns first match of Order #(\d+) from subject string. |
-| `log_failed_email_to_database()` | Creates table wp_coinsub_failed_emails if needed, inserts recipient, subject, message, order_id. |
-| `add_email_failure_notice()` | Sets transient coinsub_email_failure and hooks display_email_failure_notice. |
-| `display_email_failure_notice()` | Outputs admin notice from transient, then deletes transient. |
-| `send_custom_merchant_email_via_api()` | Unused path: would send merchant email with API auth context via wp_mail. |
+| `handle_order_processing()` | No-op; WooCommerce handles order emails (merchant configures in Settings > Emails). |
 | `handle_order_cancellation()` | Adds order note that CoinSub session may still be active (no API cancel). |
 | `handle_order_refund()` | Adds order note that refund may need manual processing (actual refund is via gateway + webhook). |
 | `display_coinsub_info()` | In admin order after billing: shows “Coinsub Payment” and transaction hash link (explorer URL from get_explorer_url). |
@@ -163,7 +319,6 @@ One-line description per function, organized by file; then **flows** (step-by-st
 | `get_explorer_url()` | Builds blockchain explorer URL: prefers _coinsub_explorer_url, else _coinsub_network_name → build_explorer_url_from_network, else chain_id → get_network_from_chain_id → build_explorer_url_from_network. |
 | `build_explorer_url_from_network()` | Returns OKLink URL: https://www.oklink.com/en/{network}/tx/{hash}. |
 | `get_network_from_chain_id()` | Maps chain_id (e.g. 137) to network slug (e.g. polygon). |
-| `add_coinsub_info_to_email()` | In order emails: for pending/on-hold shows “Complete payment” link; for completed shows transaction hash and “View on Blockchain”. |
 | `get_coinsub_order_status()` | **API get_purchase_session_status** for order’s _coinsub_purchase_session_id; returns response or null. |
 | `sync_order_status()` | Gets status via get_coinsub_order_status; if completed/failed/expired updates WooCommerce order status accordingly. |
 | `add_refund_request_button()` | No-op; customer refund request removed (refunds via admin only). |
@@ -341,7 +496,7 @@ All calls go to **api_base_url** (e.g. `https://api.coinsub.io/v1`). Caller = PH
 |----------|--------|--------|---------|
 | `/purchase/session/start` | POST | **WC_Gateway_CoinSub::process_payment()** (via API client **create_purchase_session**) | Create checkout session; get purchase_session_id and checkout_url. |
 | `/purchase/status/{id}` | GET | **CoinSub_Order_Manager::get_coinsub_order_status()** (via **get_purchase_session_status**) | Poll purchase session status (used by sync_order_status). |
-| `/purchase/status/test` | GET | **CoinSub_Webhook_Handler::test_connection()** (AJAX) (via **test_connection**) | Settings page “Test connection”. |
+**CoinSub_Webhook_Handler::test_connection()** (AJAX) (via **test_connection**) | Settings page “Test connection”. |
 | `/agreements/cancel/{agreement_id}` | POST | **CoinSub_Subscriptions::ajax_cancel_subscription()** (customer); **CoinSub_Order_Manager::ajax_admin_cancel_subscription()** (admin) (via **cancel_agreement**) | Cancel subscription agreement. |
 | `/agreements/{id}/retrieve_agreement` | GET | **CoinSub_Subscriptions::get_next_payment_for_display()** (via **retrieve_agreement**) | Get next payment date for view-order block (and admin next payment). |
 | `/merchants/transfer/request` | POST | **WC_Gateway_CoinSub::process_refund()** (via **refund_transfer_request**) | Initiate refund transfer (to_address, amount, chainId, token). |
@@ -355,7 +510,6 @@ All calls go to **api_base_url** (e.g. `https://api.coinsub.io/v1`). Caller = PH
 | Endpoint / source | Method | Handler | Purpose |
 |-------------------|--------|---------|---------|
 | `/wp-json/coinsub/v1/webhook` | POST | **CoinSub_Webhook_Handler::handle_webhook()** | Payment, failed_payment, cancellation, transfer, failed_transfer. |
-| `/wp-json/coinsub/v1/webhook/test` | GET | **CoinSub_Webhook_Handler::test_webhook_endpoint()** | Verify webhook URL. |
 | admin-ajax.php `coinsub_process_payment` | POST | **coinsub_ajax_process_payment()** | Checkout: create order and get CoinSub checkout URL. |
 | admin-ajax.php `coinsub_cancel_subscription` | POST | **CoinSub_Subscriptions::ajax_cancel_subscription()** | Customer cancel subscription. |
 | admin-ajax.php `coinsub_admin_cancel_subscription` | POST | **CoinSub_Order_Manager::ajax_admin_cancel_subscription()** | Admin cancel subscription. |

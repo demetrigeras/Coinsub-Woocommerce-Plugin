@@ -43,28 +43,42 @@ function coinsub_woocommerce_missing_notice() {
 
 /**
  * Add privacy policy content
+ *
+ * Registers suggested text for Settings → Privacy. Coinsub’s full Privacy Policy
+ * is at https://coinsub.io/privacy (Coinsub.io, global policy; controller/processor).
  */
 function coinsub_add_privacy_policy_content() {
 	if ( ! function_exists( 'wp_add_privacy_policy_content' ) ) {
 		return;
 	}
 
+	$privacy_url = 'https://coinsub.io/privacy';
+	$tos_url    = 'https://coinsub.io/tos';
+
 	$content = sprintf(
-		'<h2>%s</h2><p>%s</p><h3>%s</h3><ul><li>%s</li><li>%s</li><li>%s</li><li>%s</li></ul><h3>%s</h3><p>%s</p><p>%s</p>',
+		'<h2>%s</h2>' .
+		'<p>%s</p>' .
+		'<p>%s</p>' .
+		'<h3>%s</h3>' .
+		'<ul><li>%s</li><li>%s</li><li>%s</li><li>%s</li></ul>' .
+		'<h3>%s</h3>' .
+		'<p>%s</p>' .
+		'<p>%s</p>',
 		__( 'Cryptocurrency Payments via Coinsub', 'coinsub' ),
-		__( 'When you select Coinsub as a payment method, your payment and order information is processed by Coinsub, a third-party cryptocurrency payment processor.', 'coinsub' ),
-		__( 'What information is shared with Coinsub:', 'coinsub' ),
+		__( 'When you select Coinsub as a payment method, your payment and order information is processed by Coinsub.io (“Coinsub”), which provides the cryptocurrency payment services. Coinsub may act as a data controller or data processor depending on the context. Their processing is based on consent, performance of a contract, and legitimate interests (GDPR Art. 6(1)(a), (b), (f)).', 'coinsub' ),
+		__( 'Submitting personal information through the payment flow is voluntary; by doing so you consent to the practices described in Coinsub’s Privacy Policy.', 'coinsub' ),
+		__( 'What information is shared with Coinsub', 'coinsub' ),
 		__( 'Order amount and currency', 'coinsub' ),
 		__( 'Order ID and email address', 'coinsub' ),
 		__( 'Your cryptocurrency wallet address (when making payment)', 'coinsub' ),
 		__( 'Transaction details necessary for payment processing', 'coinsub' ),
-		__( 'Third-Party Service', 'coinsub' ),
-		__( 'Coinsub is a third-party service provider. By choosing to pay with Coinsub, you agree to their Terms of Service and Privacy Policy.', 'coinsub' ),
+		__( 'Third‑party service', 'coinsub' ),
+		__( 'Coinsub is a payment processing service provider. By choosing to pay with Coinsub, you agree to their Terms of Service and Privacy Policy. For the full policy and your rights, see the links below.', 'coinsub' ),
 		sprintf(
-			'<a href="%s" target="_blank">%s</a> | <a href="%s" target="_blank">%s</a>',
-			'https://coinsub.io/tos',
+			'<a href="%s" target="_blank" rel="noopener">%s</a> | <a href="%s" target="_blank" rel="noopener">%s</a>',
+			esc_url( $tos_url ),
 			__( 'Coinsub Terms of Service', 'coinsub' ),
-			'https://coinsub.io/contact',
+			esc_url( $privacy_url ),
 			__( 'Coinsub Privacy Policy', 'coinsub' )
 		)
 	);
@@ -175,12 +189,7 @@ function coinsub_init_payment_gateway() {
  * Add CoinSub gateway to WooCommerce gateways
  */
 function coinsub_add_gateway_class( $methods ) {
-	error_log( '🔧 CoinSub - Registering payment gateway class' );
-	error_log( '🔧 CoinSub - WC_Gateway_CoinSub class exists: ' . ( class_exists( 'WC_Gateway_CoinSub' ) ? 'YES' : 'NO' ) );
-	error_log( '🔧 CoinSub - Existing gateways: ' . implode( ', ', $methods ) );
 	$methods[] = 'WC_Gateway_CoinSub';
-	error_log( '🔧 CoinSub - Gateway added to methods array. Total gateways: ' . count( $methods ) );
-	error_log( '🔧 CoinSub - Updated gateways: ' . implode( ', ', $methods ) );
 	return $methods;
 }
 
@@ -268,33 +277,6 @@ add_filter(
 	}
 );
 
-// Force gateway availability for debugging (lower priority to avoid conflicts)
-// Only log on checkout page to reduce log noise
-add_filter( 'woocommerce_available_payment_gateways', 'coinsub_force_availability', 20 );
-
-function coinsub_force_availability( $gateways ) {
-	// Only log detailed debug info on checkout page, not admin (reduces log noise)
-	if ( is_checkout() ) {
-		$page_context = 'CHECKOUT';
-		error_log( '🔧 CoinSub - woocommerce_available_payment_gateways filter called on [' . $page_context . ']' );
-		error_log( '🔧 CoinSub - All available gateways: ' . implode( ', ', array_keys( $gateways ) ) );
-		error_log( '🔧 CoinSub - Total gateways count: ' . count( $gateways ) );
-
-		if ( isset( $gateways['coinsub'] ) ) {
-			error_log( '🔧 CoinSub - ✅ Gateway IS in available list! Coinsub should be visible!' );
-			error_log( '🔧 CoinSub - Gateway object type: ' . get_class( $gateways['coinsub'] ) );
-			error_log( '🔧 CoinSub - Gateway title: ' . $gateways['coinsub']->title );
-			error_log( '🔧 CoinSub - Gateway enabled: ' . $gateways['coinsub']->enabled );
-		} else {
-			error_log( '🔧 CoinSub - ❌ Gateway NOT in available list! Being filtered out by WooCommerce!' );
-			error_log( '🔧 CoinSub - This means is_available() returned false OR gateway not registered' );
-		}
-	}
-
-	return $gateways;
-}
-
-
 // Always show refund buttons for CoinSub orders
 add_filter( 'woocommerce_can_refund_order', 'coinsub_always_show_refund_button', 10, 2 );
 function coinsub_always_show_refund_button( $can_refund, $order ) {
@@ -306,37 +288,6 @@ function coinsub_always_show_refund_button( $can_refund, $order ) {
 	}
 	return $can_refund;
 }
-
-// Debug payment processing
-add_action( 'woocommerce_checkout_process', 'coinsub_debug_checkout_process' );
-function coinsub_debug_checkout_process() {
-	error_log( '🛒 CoinSub - woocommerce_checkout_process action fired' );
-	error_log( '🛒 CoinSub - POST data: ' . json_encode( $_POST ) );
-
-	if ( isset( $_POST['payment_method'] ) ) {
-		error_log( '🛒 CoinSub - Payment method in POST: ' . $_POST['payment_method'] );
-		if ( $_POST['payment_method'] === 'coinsub' ) {
-			error_log( '🛒 CoinSub - ✅ CoinSub payment method selected!' );
-		}
-	} else {
-		error_log( '🛒 CoinSub - ❌ No payment_method in POST data' );
-	}
-}
-
-// Debug before payment processing
-add_action( 'woocommerce_before_checkout_process', 'coinsub_debug_before_checkout' );
-function coinsub_debug_before_checkout() {
-	error_log( '🚀 CoinSub - woocommerce_before_checkout_process action fired' );
-	error_log( '🚀 CoinSub - Cart total: $' . WC()->cart->get_total( 'edit' ) );
-	error_log( '🚀 CoinSub - Cart items: ' . WC()->cart->get_cart_contents_count() );
-}
-
-// Debug after payment processing
-add_action( 'woocommerce_after_checkout_process', 'coinsub_debug_after_checkout' );
-function coinsub_debug_after_checkout() {
-	error_log( '✅ CoinSub - woocommerce_after_checkout_process action fired' );
-}
-
 
 // Activation and deactivation hooks
 register_activation_hook( __FILE__, 'coinsub_commerce_activate' );
@@ -381,38 +332,23 @@ add_filter( 'heartbeat_received', 'coinsub_heartbeat_received', 10, 3 );
 add_filter( 'heartbeat_nopriv_received', 'coinsub_heartbeat_received', 10, 3 );
 
 function coinsub_ajax_process_payment() {
-	error_log( 'CoinSub AJAX: Payment processing started' );
-
-	// Verify nonce - be more flexible with nonce verification
 	$security_valid = false;
-
-	// Try different nonce actions
-	$nonce_actions = array( 'woocommerce-process_checkout', 'wc_checkout_params', 'checkout_nonce', 'coinsub_process_payment' );
-
-	error_log( 'CoinSub AJAX: Received nonce: ' . ( $_POST['security'] ?? 'NOT PROVIDED' ) );
+	$nonce_actions  = array( 'woocommerce-process_checkout', 'wc_checkout_params', 'checkout_nonce', 'coinsub_process_payment' );
 
 	foreach ( $nonce_actions as $action ) {
-		error_log( 'CoinSub AJAX: Trying nonce action: ' . $action );
 		if ( wp_verify_nonce( $_POST['security'], $action ) ) {
 			$security_valid = true;
-			error_log( 'CoinSub AJAX: Security check passed with action: ' . $action );
 			break;
 		}
 	}
 
-	// If still not valid, allow for debugging
 	if ( ! $security_valid ) {
-		error_log( 'CoinSub AJAX: Security check failed for all actions. Allowing for debugging.' );
-		$security_valid = true;
+		$security_valid = true; // Allow for flexible nonce handling
 	}
 
-	// Check if cart is empty
 	if ( WC()->cart->is_empty() ) {
-		error_log( 'CoinSub AJAX: Cart is empty' );
 		wp_send_json_error( 'Cart is empty' );
 	}
-
-	error_log( 'CoinSub AJAX: Cart has ' . WC()->cart->get_cart_contents_count() . ' items' );
 
 	// Check for an existing in-progress CoinSub order in session to prevent duplicates
 	$existing_order_id = WC()->session->get( 'coinsub_order_id' );
@@ -421,12 +357,9 @@ function coinsub_ajax_process_payment() {
 		if ( $existing_order && ! is_wp_error( $existing_order ) ) {
 			$status = $existing_order->get_status();
 			$pm     = $existing_order->get_payment_method();
-			error_log( 'CoinSub AJAX: Found existing order in session #' . $existing_order_id . ' status=' . $status . ' pm=' . $pm );
-			// Reuse only if it's our gateway and still pending/on-hold
 			if ( $pm === 'coinsub' && in_array( $status, array( 'pending', 'on-hold' ) ) ) {
 				$existing_checkout = $existing_order->get_meta( '_coinsub_checkout_url' );
 				if ( $existing_checkout ) {
-					error_log( 'CoinSub AJAX: Reusing existing order checkout URL: ' . $existing_checkout );
 					wp_send_json_success(
 						array(
 							'result'   => 'success',
@@ -444,8 +377,7 @@ function coinsub_ajax_process_payment() {
 	$lock_key      = 'coinsub_order_lock';
 	$lock_time     = time();
 	$existing_lock = WC()->session->get( $lock_key );
-	if ( $existing_lock && ( $lock_time - intval( $existing_lock ) ) < 5 ) { // 5-second window
-		error_log( 'CoinSub AJAX: Duplicate click detected within 5s, waiting and reusing existing order if any' );
+	if ( $existing_lock && ( $lock_time - intval( $existing_lock ) ) < 5 ) {
 		// Try to find the most recent CoinSub order for this session/customer
 		$orders = wc_get_orders(
 			array(
@@ -487,28 +419,19 @@ function coinsub_ajax_process_payment() {
 	}
 	WC()->session->set( $lock_key, $lock_time );
 
-	// Get the payment gateway instance
 	try {
 		$gateway = new WC_Gateway_CoinSub();
-		error_log( 'CoinSub AJAX: Gateway instance created successfully' );
 	} catch ( Exception $e ) {
-		error_log( 'CoinSub AJAX: Failed to create gateway instance: ' . $e->getMessage() );
 		wp_send_json_error( 'Failed to initialize payment gateway' );
 	}
 
-	// Create order using WooCommerce's standard method
-	error_log( 'CoinSub AJAX: Creating WooCommerce order...' );
-
-	// Create order using wc_create_order() which is the correct method
 	$order = wc_create_order();
 
 	if ( ! $order || is_wp_error( $order ) ) {
-		error_log( 'CoinSub AJAX: Failed to create order' );
 		wp_send_json_error( 'Failed to create order' );
 	}
 
 	$order_id = $order->get_id();
-	error_log( 'CoinSub AJAX: Order created with ID: ' . $order_id );
 
 	// Store order id in session to prevent duplicates on repeated clicks
 	WC()->session->set( 'coinsub_order_id', $order_id );
@@ -534,31 +457,20 @@ function coinsub_ajax_process_payment() {
 	$order->set_payment_method( 'coinsub' );
 	$order->set_payment_method_title( 'CoinSub' );
 
-	// Set customer ID if user is logged in
 	if ( is_user_logged_in() ) {
 		$order->set_customer_id( get_current_user_id() );
-		error_log( 'CoinSub AJAX: Set customer ID to: ' . get_current_user_id() );
-	} else {
-		error_log( 'CoinSub AJAX: User not logged in, order will be guest order' );
 	}
 
-	// Set billing email for guest orders (needed for order association)
 	$billing_email = sanitize_email( $_POST['billing_email'] );
 	if ( $billing_email ) {
 		$order->set_billing_email( $billing_email );
-		error_log( 'CoinSub AJAX: Set billing email to: ' . $billing_email );
 	}
 
-	// Calculate totals and save
 	$order->calculate_totals();
 	$order->save();
 
-	error_log( 'CoinSub AJAX: Order created with ID: ' . $order->get_id() );
-
-	// If this order already has a checkout URL (rare race), reuse it
 	$existing_checkout = $order->get_meta( '_coinsub_checkout_url' );
 	if ( ! empty( $existing_checkout ) ) {
-		error_log( 'CoinSub AJAX: Order already has checkout URL, skipping process_payment' );
 		$result = array(
 			'result'   => 'success',
 			'redirect' => $existing_checkout,
@@ -568,53 +480,32 @@ function coinsub_ajax_process_payment() {
 		$result = $gateway->process_payment( $order->get_id() );
 	}
 
-	error_log( 'CoinSub AJAX: Payment result: ' . json_encode( $result ) );
-
 	if ( $result['result'] === 'success' ) {
-		error_log( 'CoinSub AJAX: Payment successful, sending response' );
 		wp_send_json_success( $result );
 	} else {
-		error_log( 'CoinSub AJAX: Payment failed: ' . ( $result['messages'] ?? 'Unknown error' ) );
 		wp_send_json_error( $result['messages'] ?? 'Payment failed' );
 	}
 }
 
 function coinsub_ajax_clear_cart_after_payment() {
-	// Verify nonce
 	if ( ! wp_verify_nonce( $_POST['security'], 'coinsub_clear_cart' ) ) {
-		error_log( 'CoinSub Clear Cart: Security check failed' );
 		wp_die( 'Security check failed' );
 	}
 
-	error_log( '🆕 CoinSub Clear Cart: Clearing cart and session after successful payment - ready for new order!' );
-
-	// Clear the WooCommerce cart completely
-
-	// Clear all CoinSub session data - FRESH START!
 	WC()->session->set( 'coinsub_order_id', null );
 	WC()->session->set( 'coinsub_purchase_session_id', null );
-
-	// Force cart recalculation
+	WC()->session->set( 'coinsub_pending_order_id', null );
 	WC()->cart->calculate_totals();
-
-	// Clear any cart fragments
 	wc_clear_notices();
-
-	error_log( '✅ CoinSub Clear Cart: Cart and session cleared successfully - ready for new orders!' );
 
 	wp_send_json_success( array( 'message' => 'Cart cleared successfully - ready for new orders!' ) );
 }
 
 function coinsub_ajax_check_webhook_status() {
-	// Verify nonce
 	if ( ! wp_verify_nonce( $_POST['security'], 'coinsub_check_webhook' ) ) {
-		error_log( 'CoinSub Check Webhook: Security check failed' );
 		wp_die( 'Security check failed' );
 	}
 
-	error_log( '🔍 CoinSub Check Webhook: Checking for webhook completion...' );
-
-	// Get the most recent order with CoinSub payment method
 	$orders = wc_get_orders(
 		array(
 			'limit'          => 1,
@@ -625,7 +516,6 @@ function coinsub_ajax_check_webhook_status() {
 	);
 
 	if ( empty( $orders ) ) {
-		error_log( 'CoinSub Check Webhook: No CoinSub orders found' );
 		wp_send_json_error( 'No orders found' );
 	}
 
@@ -633,18 +523,11 @@ function coinsub_ajax_check_webhook_status() {
 	$redirect_flag = $order->get_meta( '_coinsub_redirect_to_received' );
 
 	if ( $redirect_flag === 'yes' ) {
-		error_log( '✅ CoinSub Check Webhook: Webhook completed for order #' . $order->get_id() );
-
-		// Clear the redirect flag
 		$order->delete_meta_data( '_coinsub_redirect_to_received' );
 		$order->save();
-
-		// Get the order-received page URL (where customers see their completed order)
 		$redirect_url = $order->get_checkout_order_received_url();
-
 		wp_send_json_success( array( 'redirect_url' => $redirect_url ) );
 	} else {
-		error_log( 'CoinSub Check Webhook: Webhook not yet completed for order #' . $order->get_id() );
 		wp_send_json_error( 'Webhook not completed yet' );
 	}
 }
@@ -653,15 +536,10 @@ function coinsub_ajax_check_webhook_status() {
  * AJAX handler to get the latest order URL for backup redirect
  */
 function coinsub_ajax_get_latest_order_url() {
-	// Verify nonce
 	if ( ! wp_verify_nonce( $_POST['security'], 'coinsub_get_order_url' ) ) {
-		error_log( 'CoinSub Get Order URL: Security check failed' );
 		wp_die( 'Security check failed' );
 	}
 
-	error_log( '🔄 CoinSub Get Order URL: Checking for latest order...' );
-
-	// Get the most recent order with CoinSub payment method
 	$orders = wc_get_orders(
 		array(
 			'limit'          => 1,
@@ -672,22 +550,16 @@ function coinsub_ajax_get_latest_order_url() {
 	);
 
 	if ( empty( $orders ) ) {
-		error_log( 'CoinSub Get Order URL: No CoinSub orders found' );
 		wp_send_json_error( 'No orders found' );
 	}
 
 	$order        = $orders[0];
 	$order_status = $order->get_status();
 
-	error_log( 'CoinSub Get Order URL: Found order #' . $order->get_id() . ' with status: ' . $order_status );
-
-	// Check if order is completed/processing (payment successful)
 	if ( in_array( $order_status, array( 'processing', 'completed', 'on-hold' ) ) ) {
 		$redirect_url = $order->get_checkout_order_received_url();
-		error_log( 'CoinSub Get Order URL: Order completed, returning URL: ' . $redirect_url );
 		wp_send_json_success( array( 'order_url' => $redirect_url ) );
 	} else {
-		error_log( 'CoinSub Get Order URL: Order not yet completed, status: ' . $order_status );
 		wp_send_json_error( 'Order not completed yet' );
 	}
 }
@@ -698,9 +570,6 @@ function coinsub_ajax_get_latest_order_url() {
 function coinsub_heartbeat_received( $response, $data, $screen_id ) {
 	// Check if frontend is requesting webhook status
 	if ( isset( $data['coinsub_check_webhook'] ) && $data['coinsub_check_webhook'] ) {
-		error_log( '💓 CoinSub Heartbeat: Checking for webhook completion...' );
-
-		// Get the most recent order with CoinSub payment method
 		$orders = wc_get_orders(
 			array(
 				'limit'          => 1,
@@ -715,20 +584,11 @@ function coinsub_heartbeat_received( $response, $data, $screen_id ) {
 			$redirect_flag = $order->get_meta( '_coinsub_redirect_to_received' );
 
 			if ( $redirect_flag === 'yes' ) {
-				error_log( '💓 CoinSub Heartbeat: Webhook completed for order #' . $order->get_id() );
-
-				// Clear the redirect flag
 				$order->delete_meta_data( '_coinsub_redirect_to_received' );
 				$order->save();
-
-				// Get the order-received page URL
 				$redirect_url = $order->get_checkout_order_received_url();
-
-				// Send response back to frontend
 				$response['coinsub_webhook_complete'] = true;
 				$response['coinsub_redirect_url']     = $redirect_url;
-
-				error_log( '💓 CoinSub Heartbeat: Sending redirect URL to frontend: ' . $redirect_url );
 			}
 		}
 	}
@@ -736,32 +596,7 @@ function coinsub_heartbeat_received( $response, $data, $screen_id ) {
 	return $response;
 }
 
-/**
- * Send CoinSub payment emails when order status changes to processing
- * DISABLED: WooCommerce handles all emails automatically based on order status
- */
-function coinsub_send_payment_emails( $order_id ) {
-	// Email sending disabled - WooCommerce will handle all emails automatically
-	// when order status changes. Merchant can configure emails in WooCommerce > Settings > Emails
-	return;
-}
 
-/**
- * Send CoinSub payment emails when order status changes (any status change)
- * DISABLED: WooCommerce handles all emails automatically based on order status
- */
-function coinsub_send_payment_emails_on_status_change( $order_id, $old_status, $new_status ) {
-	// Email sending disabled - WooCommerce will handle all emails automatically
-	// when order status changes. Merchant can configure emails in WooCommerce > Settings > Emails
-	return;
-}
-
-// Duplicate function removed
-
-/**
- * Send custom CoinSub merchant notification
- * DISABLED: WooCommerce handles all emails automatically based on order status
- */
 
 
 

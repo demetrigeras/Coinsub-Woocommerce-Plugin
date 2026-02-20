@@ -28,7 +28,7 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 		}
 
 		$this->id                 = 'coinsub';
-		$this->icon               = COINSUB_PLUGIN_URL . 'images/coinsub.svg';
+		$this->icon               = 'https://app.coinsub.io/img/domain/coinsub/coinsub.square.dark.png';
 		$this->has_fields         = true; // Enable custom payment box
 		$this->method_title       = __( 'Coinsub', 'coinsub' );
 		$this->method_description = __( 'Accept Crypto payments with Coinsub', 'coinsub' );
@@ -58,21 +58,10 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 
 		// Set default Coinsub branding
 		$this->checkout_title      = 'Pay with Coinsub';
-		$this->checkout_icon       = COINSUB_PLUGIN_URL . 'images/coinsub.svg';
-		$this->button_logo_url     = COINSUB_PLUGIN_URL . 'images/coinsub.svg';
+		$this->checkout_icon       = 'https://app.coinsub.io/img/domain/coinsub/coinsub.square.dark.png';
+		$this->button_logo_url     = 'https://app.coinsub.io/img/domain/coinsub/coinsub.square.dark.png';
 		$this->button_company_name = 'Coinsub';
 		$this->brand_company       = 'Coinsub';
-
-		// Only log constructor details on checkout, not in admin (reduces log noise)
-		if ( is_checkout() ) {
-			error_log( '🏗️ CoinSub - Constructor - ID: ' . $this->id );
-			error_log( '🏗️ CoinSub - Constructor - Title: ' . $this->title );
-			error_log( '🏗️ CoinSub - Constructor - Description: ' . $this->description );
-			error_log( '🏗️ CoinSub - Constructor - Enabled: ' . $this->enabled );
-			error_log( '🏗️ CoinSub - Constructor - Merchant ID: ' . $this->get_option( 'merchant_id' ) );
-			error_log( '🏗️ CoinSub - Constructor - Method Title: ' . $this->method_title );
-			error_log( '🏗️ CoinSub - Constructor - Has fields: ' . ( $this->has_fields ? 'YES' : 'NO' ) );
-		}
 
 		// Add hooks
 		// CRITICAL: This hook fires when settings are saved - it's the primary way WooCommerce saves gateway settings
@@ -98,6 +87,8 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 		// Add AJAX actions
 		add_action( 'wp_ajax_coinsub_redirect_after_payment', array( $this, 'redirect_after_payment_ajax' ) );
 		add_action( 'wp_ajax_nopriv_coinsub_redirect_after_payment', array( $this, 'redirect_after_payment_ajax' ) );
+
+		add_action( 'woocommerce_before_checkout_form', array( $this, 'maybe_restore_cart_from_pending_order' ), 5 );
 
 	}
 
@@ -308,10 +299,6 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 	 * Initialize form fields
 	 */
 	public function init_form_fields() {
-		// Only log on checkout, not in admin (reduces log noise)
-		if ( is_checkout() ) {
-			error_log( '🏗️ CoinSub - init_form_fields() called' );
-		}
 		$this->form_fields = array(
 			'enabled'     => array(
 				'title'   => __( 'Enable/Disable', 'coinsub' ),
@@ -529,7 +516,6 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 				$this->update_api_client_settings();
 			} catch ( Exception $e ) {
 				// Don't break the save process - settings were saved successfully
-				error_log( 'Coinsub: Error updating API client: ' . $e->getMessage() );
 			}
 		}
 
@@ -546,61 +532,84 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 	}
 
 	/**
+	 * Restore cart from a pending CoinSub order when user returns to checkout with an empty cart.
+	 * Enables a fresh checkout / new purchase session when they place order again.
+	 */
+	public function maybe_restore_cart_from_pending_order() {
+		if ( ! function_exists( 'WC' ) || ! WC()->session || ! WC()->cart ) {
+			return;
+		}
+		$pending_order_id = WC()->session->get( 'coinsub_pending_order_id' );
+		if ( empty( $pending_order_id ) || ! WC()->cart->is_empty() ) {
+			return;
+		}
+		$order = wc_get_order( $pending_order_id );
+		if ( ! $order || $order->get_payment_method() !== 'coinsub' || ! in_array( $order->get_status(), array( 'pending', 'on-hold' ), true ) ) {
+			return;
+		}
+		$restored = 0;
+		foreach ( $order->get_items() as $item ) {
+			if ( ! $item->is_type( 'line_item' ) ) {
+				continue;
+			}
+			$product = $item->get_product();
+			if ( ! $product || ! $product->is_purchasable() ) {
+				continue;
+			}
+			$qty = (int) $item->get_quantity();
+			if ( $qty < 1 ) {
+				continue;
+			}
+			$variation_id = $item->get_variation_id();
+			$variation    = array();
+			if ( $variation_id ) {
+				foreach ( $item->get_meta_data() as $meta ) {
+					if ( strpos( $meta->key, 'attribute_' ) === 0 ) {
+						$variation[ $meta->key ] = $meta->value;
+					}
+				}
+			}
+			$added = WC()->cart->add_to_cart( $product->get_id(), $qty, $variation_id, $variation );
+			if ( $added ) {
+				$restored++;
+			}
+		}
+		if ( $restored > 0 ) {
+			WC()->session->set( 'coinsub_pending_order_id', null );
+			wc_add_notice( __( 'Your cart has been restored. Please place your order again to continue to payment.', 'coinsub' ), 'notice' );
+		}
+	}
+
+	/**
 	 * Process the payment and return the result
 	 */
 	public function process_payment( $order_id ) {
-		error_log( '🚀🚀🚀 CoinSub - process_payment() called for order #' . $order_id . ' 🚀🚀🚀' );
-		error_log( '🎯 CoinSub - Payment method selected: ' . ( $_POST['payment_method'] ?? 'none' ) );
-		error_log( '🎯 CoinSub - Order total: $' . wc_get_order( $order_id )->get_total() );
-
 		$order = wc_get_order( $order_id );
 
 		if ( ! $order ) {
-			error_log( '❌ CoinSub - Order not found: ' . $order_id );
 			return array(
 				'result'   => 'failure',
 				'messages' => __( 'Order not found', 'coinsub' ),
 			);
 		}
 
-		error_log( '✅ CoinSub - Order found. Starting payment process...' );
-
 		try {
-			// Get cart data from session (calculated by cart sync)
 			$cart_data = WC()->session->get( 'coinsub_cart_data' );
-
 			if ( ! $cart_data ) {
-				error_log( '⚠️ CoinSub - No cart data from session, calculating now...' );
 				$cart_data = $this->calculate_cart_totals();
 			}
 
-			error_log( '✅ CoinSub - Using cart data from session:' );
-			error_log( '  Total: $' . $cart_data['total'] );
-			error_log( '  Currency: ' . $cart_data['currency'] );
-			error_log( '  Has Subscription: ' . ( $cart_data['has_subscription'] ? 'YES' : 'NO' ) );
-
-			// Create purchase session directly with cart totals
-			error_log( '💳 CoinSub - Creating purchase session...' );
 			$purchase_session_data = $this->prepare_purchase_session_from_cart( $order, $cart_data );
-
 			$purchase_session = $this->api_client->create_purchase_session( $purchase_session_data );
 
-			// Check for errors BEFORE trying to access as array
 			if ( is_wp_error( $purchase_session ) ) {
-				error_log( '❌ CoinSub - Purchase session failed: ' . $purchase_session->get_error_message() );
 				throw new Exception( $purchase_session->get_error_message() );
 			}
 
-			error_log( '✅ CoinSub - Purchase session created: ' . ( $purchase_session['purchase_session_id'] ?? 'unknown' ) );
-
-			// Store CoinSub data in order meta
 			$order->update_meta_data( '_coinsub_purchase_session_id', $purchase_session['purchase_session_id'] );
 			$order->update_meta_data( '_coinsub_checkout_url', $purchase_session['checkout_url'] );
 			$order->update_meta_data( '_coinsub_merchant_id', $this->get_option( 'merchant_id' ) );
 
-			error_log( '✅ CoinSub - Stored purchase session ID: ' . $purchase_session['purchase_session_id'] );
-
-			// Store subscription data if applicable
 			if ( $cart_data['has_subscription'] ) {
 				$order->update_meta_data( '_coinsub_is_subscription', 'yes' );
 				$order->update_meta_data( '_coinsub_subscription_data', $cart_data['subscription_data'] );
@@ -608,23 +617,16 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 				$order->update_meta_data( '_coinsub_is_subscription', 'no' );
 			}
 
-			// Store cart items in order meta
 			$order->update_meta_data( '_coinsub_cart_items', $cart_data['items'] );
 			$order->save();
 
-			error_log( '🔗 CoinSub - Checkout URL stored: ' . $purchase_session['checkout_url'] );
-
-			// Update order status - awaiting payment confirmation
 			$order->update_status( 'on-hold', __( 'Awaiting crypto payment. Customer redirected to Coinsub checkout.', 'coinsub' ) );
 
-			// Empty cart and clear CoinSub order from session
-			WC()->cart->empty_cart();
-			WC()->session->set( 'coinsub_order_id', null );  // Clear for next order
+			WC()->session->set( 'coinsub_pending_order_id', $order_id );
+			WC()->session->set( 'coinsub_order_id', null );
 
 			$checkout_url = $purchase_session['checkout_url'];
-			error_log( '🎉 CoinSub - Payment process complete! Checkout URL: ' . $checkout_url );
 
-			// Return checkout URL for iframe display
 			return array(
 				'result'               => 'success',
 				'redirect'             => $checkout_url,
@@ -632,7 +634,6 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 			);
 
 		} catch ( Exception $e ) {
-			error_log( '❌ CoinSub - Payment error: ' . $e->getMessage() );
 			wc_add_notice( __( 'Payment error: ', 'coinsub' ) . $e->getMessage(), 'error' );
 			return array(
 				'result'   => 'failure',
@@ -701,16 +702,8 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 					'interval'  => $product->get_meta( '_coinsub_interval' ),
 					'duration'  => $product->get_meta( '_coinsub_duration' ),
 				);
-				error_log( '🔄 SUBSCRIPTION ORDER DETECTED!' );
-				error_log( '  Frequency: ' . $subscription_data['frequency'] );
-				error_log( '  Interval: ' . $subscription_data['interval'] );
-				error_log( '  Duration: ' . $subscription_data['duration'] );
 				break;
 			}
-		}
-
-		if ( ! $is_subscription ) {
-			error_log( '📦 Regular order (not subscription)' );
 		}
 
 		// Prepare product information
@@ -767,7 +760,6 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 		$details_string = implode( ' | ', $details_parts );
 
 		$success_url = $this->get_return_url( $order );
-		error_log( '🔗 CoinSub - Success URL: ' . $success_url );
 
 		$session_data = array(
 			'name'        => $order_name,
@@ -834,12 +826,6 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 
 		// Add subscription data if this is a subscription
 		if ( $is_subscription && $subscription_data ) {
-			error_log( '🔍 Raw subscription data from product:' );
-			error_log( '  Frequency: ' . var_export( $subscription_data['frequency'], true ) );
-			error_log( '  Interval: ' . var_export( $subscription_data['interval'], true ) );
-			error_log( '  Duration: ' . var_export( $subscription_data['duration'], true ) );
-
-			// Map interval number to capitalized string (matching Go API)
 			$interval_map = array(
 				'0' => 'Day',
 				0   => 'Day',
@@ -853,20 +839,13 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 
 			$interval_value = $subscription_data['interval'];
 
-			// Don't default - let it error if interval is invalid
 			if ( ! isset( $interval_map[ $interval_value ] ) ) {
-				error_log( '❌ Invalid interval value: ' . var_export( $interval_value, true ) );
 				throw new Exception( 'Invalid subscription interval. Please check product settings.' );
 			}
 
 			$session_data['interval']  = $interval_map[ $interval_value ];
 			$session_data['frequency'] = (string) $subscription_data['frequency'];
 			$session_data['duration']  = (string) ( $subscription_data['duration'] ?: '0' );
-
-			error_log( '✅ Mapped subscription fields:' );
-			error_log( '  interval: ' . $session_data['interval'] );
-			error_log( '  frequency: ' . $session_data['frequency'] );
-			error_log( '  duration: ' . $session_data['duration'] );
 
 			// Mark in metadata for tracking
 			$session_data['metadata']['is_subscription']       = true;
@@ -958,31 +937,17 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 	 * Process refunds (Automatic API refund for single payments)
 	 */
 	public function process_refund( $order_id, $amount = null, $reason = '' ) {
-		error_log( '🔄 CoinSub Refund - process_refund called' );
-		error_log( '🔄 CoinSub Refund - Order ID: ' . $order_id );
-		error_log( '🔄 CoinSub Refund - Amount parameter: ' . ( $amount ?? 'NULL' ) );
-		error_log( '🔄 CoinSub Refund - Reason: ' . $reason );
-
 		$order = wc_get_order( $order_id );
 
 		if ( ! $order ) {
-			error_log( '❌ CoinSub Refund - Order not found: ' . $order_id );
 			return new WP_Error( 'invalid_order', __( 'Invalid order.', 'coinsub' ) );
 		}
 
-		error_log( '🔄 CoinSub Refund - Order total: ' . $order->get_total() );
-		error_log( '🔄 CoinSub Refund - Order status: ' . $order->get_status() );
-		error_log( '🔄 CoinSub Refund - Payment method: ' . $order->get_payment_method() );
-
-		// If amount is null or 0, use the order total
 		if ( $amount === null || $amount == 0 ) {
 			$amount = $order->get_total();
-			error_log( '🔄 CoinSub Refund - Using order total as refund amount: ' . $amount );
 		}
 
-		// Check if this is a subscription order (for logging only)
 		$is_subscription = $order->get_meta( '_coinsub_is_subscription' ) === 'yes';
-		error_log( '🔄 CoinSub Refund - Is subscription: ' . ( $is_subscription ? 'YES' : 'NO' ) );
 
 		// Process automatic refund for ALL orders (including subscriptions) via API
 		// IMPORTANT: All refunds are processed as USDC on Polygon for simplicity and wide acceptance
@@ -996,31 +961,10 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 		$agreement_message_json = $order->get_meta( '_coinsub_agreement_message' );
 		$agreement_message      = $agreement_message_json ? json_decode( $agreement_message_json, true ) : null;
 
-		error_log( '🔄 CoinSub Refund - Customer wallet: ' . ( $customer_wallet ?: 'NOT FOUND' ) );
-		error_log( '🔄 CoinSub Refund - Customer email: ' . ( $customer_email ?: 'NOT FOUND' ) );
-		error_log( '🔄 CoinSub Refund - Agreement message: ' . ( $agreement_message_json ?: 'NOT FOUND' ) );
-
-		// Debug: Show all order meta
-		$all_meta = $order->get_meta_data();
-		error_log(
-			'🔄 CoinSub Refund - All order meta keys: ' . implode(
-				', ',
-				array_map(
-					function( $meta ) {
-						return $meta->key;
-					},
-					$all_meta
-				)
-			)
-		);
-
 		// Use customer email as to_address (preferred) or fallback to wallet address
 		$to_address = $customer_email ?: $customer_wallet;
 
-		// Validate required data for automatic refund
 		if ( empty( $to_address ) ) {
-			error_log( '❌ CoinSub Refund - No customer email or wallet found, cannot process refund' );
-
 			// Fallback to manual refund for orders without customer data
 			$refund_note = sprintf(
 				__( 'AUTOMATIC REFUND FAILED - MANUAL REFUND REQUIRED: %1$s. Reason: %2$s. Customer email or wallet address not found. Please contact customer and process refund manually.', 'coinsub' ),
@@ -1041,67 +985,39 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 		$chain_id     = $order->get_meta( '_coinsub_chain_id' );
 		$token_symbol = $order->get_meta( '_coinsub_token_symbol' );
 
-		error_log( '🔄 CoinSub Refund - Chain ID from webhook: ' . ( $chain_id ?: 'NOT FOUND' ) );
-		error_log( '🔄 CoinSub Refund - Token symbol from webhook: ' . ( $token_symbol ?: 'NOT FOUND' ) );
-
-		// Strategy 2: If not available, try to fetch from payments API using payment_id
 		if ( empty( $chain_id ) || empty( $token_symbol ) ) {
 			$payment_id = $order->get_meta( '_coinsub_payment_id' );
 
 			if ( ! empty( $payment_id ) ) {
-				error_log( '🔄 CoinSub Refund - Fetching payment details from API for payment_id: ' . $payment_id );
-
 				$payment_details = $api_client->get_payment_details( $payment_id );
 
 				if ( ! is_wp_error( $payment_details ) && isset( $payment_details['data'] ) ) {
 					$payment_data = $payment_details['data'];
 
-					// Extract chain_id and token from payment details
 					if ( ! empty( $payment_data['chain_id'] ) ) {
 						$chain_id = $payment_data['chain_id'];
-						error_log( '✅ CoinSub Refund - Got chain_id from API: ' . $chain_id );
 					} elseif ( ! empty( $payment_data['network_id'] ) ) {
 						$chain_id = $payment_data['network_id'];
-						error_log( '✅ CoinSub Refund - Got network_id from API: ' . $chain_id );
 					}
 
-					// Token symbol is in the 'currency' field
 					if ( ! empty( $payment_data['currency'] ) ) {
 						$token_symbol = $payment_data['currency'];
-						error_log( '✅ CoinSub Refund - Got currency from API: ' . $token_symbol );
 					} elseif ( ! empty( $payment_data['token_symbol'] ) ) {
 						$token_symbol = $payment_data['token_symbol'];
-						error_log( '✅ CoinSub Refund - Got token_symbol from API: ' . $token_symbol );
 					} elseif ( ! empty( $payment_data['token'] ) ) {
 						$token_symbol = $payment_data['token'];
-						error_log( '✅ CoinSub Refund - Got token from API: ' . $token_symbol );
 					}
-				} else {
-					error_log( '⚠️ CoinSub Refund - Failed to fetch payment details from API' );
 				}
 			}
 		}
 
-		// Strategy 3: Fallback to Polygon mainnet and USDC if still not available
 		if ( empty( $chain_id ) ) {
 			$chain_id = '137'; // Polygon mainnet (production)
-			error_log( '⚠️ CoinSub Refund - Using fallback chain_id: ' . $chain_id . ' (Polygon mainnet)' );
 		}
 
 		if ( empty( $token_symbol ) ) {
-			$token_symbol = 'USDC'; // Default to USDC
-			error_log( '⚠️ CoinSub Refund - Using fallback token_symbol: ' . $token_symbol );
+			$token_symbol = 'USDC';
 		}
-
-		error_log( '🔄 CoinSub Refund - Final refund details:' );
-		error_log( '🔄 CoinSub Refund - Chain ID: ' . $chain_id . ' (' . $this->get_network_name( $chain_id ) . ')' );
-		error_log( '🔄 CoinSub Refund - Token: ' . $token_symbol );
-
-		error_log( '🔄 CoinSub Refund - Processing automatic refund for order #' . $order_id );
-		error_log( '🔄 CoinSub Refund - Amount: ' . $amount );
-		error_log( '🔄 CoinSub Refund - To Address (email/wallet): ' . $to_address );
-
-		error_log( '🔄 CoinSub Refund - About to call refund API...' );
 
 		// Call refund API using customer email or wallet address
 		$refund_result = $api_client->refund_transfer_request(
@@ -1111,19 +1027,14 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 			$token_symbol
 		);
 
-		error_log( '🔄 CoinSub Refund - API call completed. Result: ' . ( is_wp_error( $refund_result ) ? 'ERROR' : 'SUCCESS' ) );
-
 		if ( is_wp_error( $refund_result ) ) {
 			$error_message = $refund_result->get_error_message();
-			error_log( '❌ CoinSub Refund - API returned WP_Error: ' . $error_message );
-			error_log( '❌ CoinSub Refund - Error code: ' . $refund_result->get_error_code() );
-			error_log( '❌ CoinSub Refund - Error data: ' . json_encode( $refund_result->get_error_data() ) );
 
 			// Check for insufficient funds error
 			if ( strpos( strtolower( $error_message ), 'insufficient' ) !== false ||
 				strpos( strtolower( $error_message ), 'balance' ) !== false ) {
 
-				$network_name = $this->get_network_name( $chain_id );
+				$network_name = $order->get_meta( '_coinsub_network_name' ) ?: $this->get_network_name( $chain_id );
 
 				$insufficient_funds_note = sprintf(
 					__( 'REFUND FAILED - INSUFFICIENT FUNDS: %1$s. Reason: %2$s. Network: %3$s. Token: %4$s. Error: %5$s', 'coinsub' ),
@@ -1140,7 +1051,7 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 				$insufficient_funds_note .= 'You need ' . $amount . ' ' . $token_symbol . ' on ' . $network_name . ' to process this refund.<br><br>';
 
 				$insufficient_funds_note .= '<strong>To add funds:</strong><br>';
-				$insufficient_funds_note .= '1. Go to <strong>WooCommerce → Settings → Payments → CoinSub</strong><br>';
+				$insufficient_funds_note .= '1. Go to <strong>WooCommerce → Settings → Payments → Coinsub</strong><br>';
 				$insufficient_funds_note .= '2. Click <strong>"Manage"</strong> or scroll down<br>';
 				$insufficient_funds_note .= '3. Use the onramp button or send ' . $token_symbol . ' to your merchant wallet on ' . $network_name . '<br>';
 				$insufficient_funds_note .= '4. Retry the refund once funds are available<br><br>';
@@ -1150,11 +1061,9 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 				$order->add_order_note( $insufficient_funds_note );
 				$order->update_status( 'refund-pending', __( 'Refund pending - insufficient funds. Please add tokens to your merchant wallet.', 'coinsub' ) );
 
-				error_log( '❌ CoinSub Refund - Insufficient funds: ' . $error_message );
 				return new WP_Error( 'insufficient_funds', $error_message );
 			}
 
-			// Other API errors
 			$refund_note = sprintf(
 				__( 'REFUND FAILED: %1$s. Reason: %2$s. API Error: %3$s', 'coinsub' ),
 				wc_price( $amount ),
@@ -1162,13 +1071,10 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 				$error_message
 			);
 			$order->add_order_note( $refund_note );
-			error_log( '❌ CoinSub Refund - API Error: ' . $error_message );
 			return $refund_result;
 		}
 
-		// Validate API response
 		if ( ! is_array( $refund_result ) || empty( $refund_result ) ) {
-			error_log( '❌ CoinSub Refund - API returned invalid response: ' . json_encode( $refund_result ) );
 			$refund_note = sprintf(
 				__( 'REFUND FAILED: %1$s. Reason: %2$s. API returned invalid response. Please try again or process manually.', 'coinsub' ),
 				wc_price( $amount ),
@@ -1179,16 +1085,10 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 			return new WP_Error( 'invalid_api_response', __( 'API returned invalid response. Please try again.', 'coinsub' ) );
 		}
 
-		error_log( '✅ CoinSub Refund - API response received: ' . json_encode( $refund_result ) );
-
-		// Success - add order note and update status
 		$refund_id   = $refund_result['refund_id'] ?? $refund_result['transfer_id'] ?? 'N/A';
 		$transfer_id = $refund_result['transfer_id'] ?? $refund_result['refund_id'] ?? null;
+		$network_name = $order->get_meta( '_coinsub_network_name' ) ?: $this->get_network_name( $chain_id );
 
-		// Get network name for display
-		$network_name = $this->get_network_name( $chain_id );
-
-		// Create refund note
 		$refund_note = sprintf(
 			__( 'REFUND INITIATED: %1$s. Reason: %2$s. Recipient: %3$s. Refund ID: %4$s. Network: %5$s. Token: %6$s. Waiting for transfer confirmation...', 'coinsub' ),
 			wc_price( $amount ),
@@ -1201,7 +1101,6 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 
 		$order->add_order_note( $refund_note );
 
-		// Store refund details and mark as pending (for Transfer API webhook: match by transfer_id when type=transfer/failed_transfer)
 		$order->update_meta_data( '_coinsub_refund_pending', 'yes' );
 		$order->update_meta_data( '_coinsub_refund_status', 'pending' );
 		$order->update_meta_data( '_coinsub_refund_chain_id', $chain_id );
@@ -1209,21 +1108,14 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 
 		if ( ! empty( $refund_id ) ) {
 			$order->update_meta_data( '_coinsub_refund_id', $refund_id );
-			error_log( '✅ CoinSub Refund - Stored refund ID: ' . $refund_id );
 		}
 		if ( ! empty( $transfer_id ) ) {
 			$order->update_meta_data( '_coinsub_pending_transfer_id', $transfer_id );
-			error_log( '✅ CoinSub Refund - Stored pending transfer_id for webhook match: ' . $transfer_id );
 		}
 
-		// Don't mark as refunded yet - wait for transfer webhook confirmation
-		// WooCommerce will mark it as refunded when we return true, but we'll track status separately
 		$order->save();
 
-		error_log( '✅ CoinSub Refund - Refund initiated for order #' . $order_id . ' - waiting for transfer confirmation via webhook' );
-		error_log( '✅ CoinSub Refund - Refund ID: ' . $refund_id . ', Network: ' . $network_name . ', Token: ' . $token_symbol );
-
-		// Return true to WooCommerce so it shows the refund UI, but we'll update status when transfer webhook arrives
+		// Return true so WooCommerce shows refund UI; status finalized when transfer webhook arrives
 		return true;
 	}
 
@@ -1297,26 +1189,12 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 		);
 	}
 
+	
+	
+	
 	/**
-	 * Get token symbol for currency
-	 */
-	private function get_token_symbol_for_currency( $currency ) {
-		$currency_token_map = array(
-			'USD' => 'USDC',
-			'EUR' => 'USDC', // Default to USDC for EUR
-			'GBP' => 'USDC', // Default to USDC for GBP
-			'CAD' => 'USDC', // Default to USDC for CAD
-			'AUD' => 'USDC', // Default to USDC for AUD
-			'JPY' => 'USDC', // Default to USDC for JPY
-			'CHF' => 'USDC', // Default to USDC for CHF
-			'CNY' => 'USDC', // Default to USDC for CNY
-		);
-
-		return isset( $currency_token_map[ $currency ] ) ? $currency_token_map[ $currency ] : 'USDC';
-	}
-
-	/**
-	 * Get network name for chain ID
+	 * Human-readable network name for a chain_id. Used as fallback when order meta
+	 * _coinsub_network_name (from webhook transaction_details.network) is not set.
 	 */
 	private function get_network_name( $chain_id ) {
 		$networks = array(
@@ -1343,23 +1221,11 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 	 * Override can_refund to always allow refunds for CoinSub orders
 	 */
 	public function can_refund( $order ) {
-		error_log( '🔍 CoinSub Refund - can_refund() called for order #' . $order->get_id() );
-		error_log( '🔍 CoinSub Refund - Order payment method: ' . $order->get_payment_method() );
-		error_log( '🔍 CoinSub Refund - Order status: ' . $order->get_status() );
-		error_log( '🔍 CoinSub Refund - Gateway supports: ' . json_encode( $this->supports ) );
-
-		// Always allow refunds for CoinSub orders that have been paid
 		if ( $order->get_payment_method() === 'coinsub' ) {
 			$paid_statuses = array( 'processing', 'completed', 'on-hold' );
-			$can_refund    = in_array( $order->get_status(), $paid_statuses );
-			error_log( '🔍 CoinSub Refund - can_refund result: ' . ( $can_refund ? 'YES' : 'NO' ) );
-			return $can_refund;
+			return in_array( $order->get_status(), $paid_statuses );
 		}
-
-		// For other payment methods, use default behavior
-		$result = parent::can_refund( $order );
-		error_log( '🔍 CoinSub Refund - can_refund (parent) result: ' . ( $result ? 'YES' : 'NO' ) );
-		return $result;
+		return parent::can_refund( $order );
 	}
 
 
@@ -1381,7 +1247,7 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 	 * Get payment method icon
 	 */
 	public function get_icon() {
-		$icon_url  = COINSUB_PLUGIN_URL . 'images/coinsub.svg';
+		$icon_url  = 'https://app.coinsub.io/img/domain/coinsub/coinsub.square.dark.png';
 		$icon_size = '30px';
 
 		$icon_html = '<img src="' . esc_url( $icon_url ) . '" alt="' . esc_attr( $this->get_title() ) . '" style="max-width: ' . $icon_size . '; max-height: ' . $icon_size . '; height: auto; vertical-align: middle; margin-left: 8px;" />';
@@ -1876,111 +1742,23 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 	 * Check if gateway needs setup
 	 */
 	public function needs_setup() {
-		$needs_setup = empty( $this->get_option( 'merchant_id' ) );
-		error_log( '🔧 CoinSub - needs_setup() called. Result: ' . ( $needs_setup ? 'YES' : 'NO' ) );
-		return $needs_setup;
+		return empty( $this->get_option( 'merchant_id' ) );
 	}
 
 	/**
 	 * Check if the gateway is available
 	 */
 	public function is_available() {
-		// Only log availability checks on checkout page (not admin) to reduce log noise
-		$context = is_checkout() ? 'CHECKOUT PAGE' : ( is_admin() ? 'ADMIN' : 'OTHER' );
-
-		// Only log detailed debug info on checkout page, not admin
-		if ( is_checkout() ) {
-			error_log( '=== CoinSub Gateway - Availability Check [' . $context . '] ===' );
-			error_log( 'CoinSub - Enabled setting: ' . $this->get_option( 'enabled' ) );
-			error_log( 'CoinSub - Merchant ID: ' . $this->get_option( 'merchant_id' ) );
-			error_log( 'CoinSub - API Key exists: ' . ( ! empty( $this->get_option( 'api_key' ) ) ? 'Yes' : 'No' ) );
-		}
-
-		// Check cart (only on frontend)
-		if ( ! is_admin() && WC()->cart ) {
-			error_log( 'CoinSub - Cart total: $' . WC()->cart->get_total( 'edit' ) );
-			error_log( 'CoinSub - Cart has items: ' . ( WC()->cart->get_cart_contents_count() > 0 ? 'YES' : 'NO' ) );
-			error_log( 'CoinSub - Cart currency: ' . get_woocommerce_currency() );
-
-			if ( WC()->cart->needs_shipping() ) {
-				error_log( 'CoinSub - Cart needs shipping: YES' );
-
-				// Check if shipping is chosen
-				$chosen_shipping = WC()->session ? WC()->session->get( 'chosen_shipping_methods' ) : array();
-				error_log( 'CoinSub - Chosen shipping methods: ' . json_encode( $chosen_shipping ) );
-
-				// Check if customer has entered shipping info
-				$customer = WC()->customer;
-				if ( $customer ) {
-					error_log( 'CoinSub - Customer country: ' . $customer->get_shipping_country() );
-					error_log( 'CoinSub - Customer postcode: ' . $customer->get_shipping_postcode() );
-				}
-			} else {
-				error_log( 'CoinSub - Cart needs shipping: NO' );
-			}
-		}
-
-		// Check if this is actually the checkout page context
-		if ( is_checkout() && ! is_wc_endpoint_url( 'order-pay' ) ) {
-			error_log( 'CoinSub - Context: Regular checkout page ✅' );
-		} elseif ( is_wc_endpoint_url( 'order-pay' ) ) {
-			error_log( 'CoinSub - Context: Order pay page' );
-		}
-
-		// Basic validation - always check these first
 		if ( $this->get_option( 'enabled' ) !== 'yes' ) {
-			// Only log on checkout, not in admin (reduces log noise)
-			if ( is_checkout() ) {
-				error_log( 'CoinSub - UNAVAILABLE: Gateway is disabled in settings ❌' );
-			}
 			return false;
 		}
-
 		if ( empty( $this->get_option( 'merchant_id' ) ) ) {
-			// Only log on checkout, not in admin (reduces log noise)
-			if ( is_checkout() ) {
-				error_log( 'CoinSub - UNAVAILABLE: No merchant ID configured ❌' );
-			}
 			return false;
 		}
-
 		if ( empty( $this->get_option( 'api_key' ) ) ) {
-			// Only log on checkout, not in admin (reduces log noise)
-			if ( is_checkout() ) {
-				error_log( 'CoinSub - UNAVAILABLE: No API key configured ❌' );
-			}
 			return false;
 		}
-
-		// Call parent method to ensure WooCommerce core checks pass
-		$parent_available = parent::is_available();
-		// Only log on checkout, not in admin
-		if ( is_checkout() ) {
-			error_log( 'CoinSub - Parent is_available(): ' . ( $parent_available ? 'TRUE' : 'FALSE' ) );
-		}
-
-		if ( ! $parent_available ) {
-			// Only log on checkout, not in admin (reduces log noise)
-			if ( is_checkout() ) {
-				error_log( 'CoinSub - UNAVAILABLE: Parent class returned false (WooCommerce core filtering) ❌' );
-				error_log( 'CoinSub - Common reasons: cart empty, order total 0, shipping required but not selected, terms & conditions page not set' );
-
-				// Check specifically for terms & conditions issue
-				$terms_page_id = wc_get_page_id( 'terms' );
-				if ( empty( $terms_page_id ) ) {
-					error_log( 'CoinSub - DIAGNOSIS: Terms & Conditions page is not set! This often blocks payment gateways.' );
-					error_log( 'CoinSub - SOLUTION: Set a Terms & Conditions page in WooCommerce > Settings > Advanced' );
-				}
-			}
-
-			return false;
-		}
-
-		// Only log on checkout, not in admin
-		if ( is_checkout() ) {
-			error_log( 'CoinSub - AVAILABLE: Gateway ready for checkout! ✅✅✅' );
-		}
-		return true;
+		return parent::is_available();
 	}
 
 	/**
@@ -2002,8 +1780,6 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 		if ( ! empty( $orders ) ) {
 			$order        = $orders[0];
 			$redirect_url = $order->get_checkout_order_received_url();
-
-			error_log( '🎯 CoinSub - Payment completed! Redirecting to: ' . $redirect_url );
 
 			// Return redirect URL for JavaScript to use
 			return array(

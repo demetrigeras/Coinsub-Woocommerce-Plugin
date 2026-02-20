@@ -136,7 +136,6 @@ class CoinSub_Subscriptions {
 
 			if ( ! $is_subscription ) {
 				$cart->remove_cart_item( $cart_item_key );
-				error_log( '🛒 Removed regular product from cart: ' . $product->get_name() );
 			}
 		}
 	}
@@ -243,11 +242,6 @@ class CoinSub_Subscriptions {
 			if ( empty( $duration ) || $duration === 'Until Cancelled' ) {
 				$duration = '0';
 			}
-
-			error_log( '💾 Saving subscription product #' . $post_id );
-			error_log( '  Frequency: ' . $frequency );
-			error_log( '  Interval: ' . $interval );
-			error_log( '  Duration: ' . $duration );
 
 			update_post_meta( $post_id, '_coinsub_frequency', $frequency );
 			update_post_meta( $post_id, '_coinsub_interval', $interval );

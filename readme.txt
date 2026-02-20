@@ -1,6 +1,6 @@
 === Coinsub for WooCommerce ===
 Contributors: coinsub
-Tags: cryptocurrency, crypto payments, woocommerce, bitcoin, ethereum, stablecoin, usdc, payment gateway
+Tags: cryptocurrency, woocommerce, payment gateway, stablecoins and cryptocurrencies
 Requires at least: 5.0
 Tested up to: 6.4
 Requires PHP: 7.4

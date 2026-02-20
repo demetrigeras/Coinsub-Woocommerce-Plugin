@@ -63,16 +63,7 @@ class CoinSub_API_Client {
 	 * Create a purchase session
 	 */
 	public function create_purchase_session( $order_data ) {
-		error_log( 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' );
-		error_log( 'XXX CREATE PURCHASE SESSION CALLED XXX' );
-		error_log( 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' );
-
-		// Purchase session uses base v1 URL
 		$endpoint = rtrim( $this->api_base_url, '/' ) . '/purchase/session/start';
-
-		error_log( 'API Base URL: ' . $this->api_base_url );
-		error_log( 'Full Endpoint: ' . $endpoint );
-		error_log( 'Order Amount: ' . $order_data['amount'] . ' ' . $order_data['currency'] );
 
 		$payload = array(
 			'name'        => $order_data['name'],
@@ -98,9 +89,6 @@ class CoinSub_API_Client {
 				$payload['duration'] = $order_data['duration'];
 			}
 		}
-
-		error_log( '🌐 CoinSub API - Full Payload: ' . json_encode( $payload ) );
-		error_log( '🌐 CoinSub API - Success URL being sent: ' . ( $payload['success_url'] ?? 'NOT SET' ) );
 
 		$headers = array(
 			'Content-Type' => 'application/json',
@@ -135,13 +123,6 @@ class CoinSub_API_Client {
 		// Extract purchase session ID and URL from response
 		$purchase_session_id = $data['data']['purchase_session_id'] ?? null;
 		$checkout_url        = $data['data']['url'] ?? null;
-
-		error_log( 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' );
-		error_log( 'XXX API RESPONSE RECEIVED XXX' );
-		error_log( 'Session ID: ' . $purchase_session_id );
-		error_log( 'CHECKOUT URL FROM API: ' . $checkout_url );
-		error_log( 'FINAL CHECKOUT URL: ' . $checkout_url );
-		error_log( 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' );
 
 		// Remove 'sess_' prefix if present (CoinSub returns sess_UUID but checkout needs just UUID)
 		if ( $purchase_session_id && strpos( $purchase_session_id, 'sess_' ) === 0 ) {
@@ -190,43 +171,6 @@ class CoinSub_API_Client {
 		return $data;
 	}
 
-	// REMOVED: create_order - using WooCommerce-only approach
-
-	// REMOVED: update_order - using WooCommerce-only approach
-
-	// REMOVED: checkout_order - using WooCommerce-only approach
-
-	// REMOVED: create_product - using WooCommerce-only approach
-
-	// REMOVED: get_product_by_woocommerce_id - using WooCommerce-only approach
-
-	/**
-	 * Test API connection
-	 */
-	public function test_connection() {
-		$endpoint = $this->api_base_url . '/purchase/status/test';
-
-		$headers = array(
-			'Content-Type' => 'application/json',
-			'Merchant-ID'  => $this->merchant_id,
-			'API-Key'      => $this->api_key,
-
-		);
-
-		$response = wp_remote_get(
-			$endpoint,
-			array(
-				'headers' => $headers,
-				'timeout' => 10,
-			)
-		);
-
-		if ( is_wp_error( $response ) ) {
-			return false;
-		}
-
-		return wp_remote_retrieve_response_code( $response ) === 200;
-	}
 
 	// REMOVED: update_order_status - using WooCommerce-only approach
 
@@ -299,11 +243,6 @@ class CoinSub_API_Client {
 	public function refund_transfer_request( $to_address, $amount, $chain_id, $token_symbol ) {
 		$endpoint = rtrim( $this->api_base_url, '/' ) . '/merchants/transfer/request';
 
-		// Debug API key and endpoint
-		error_log( '🔑 CoinSub Refund API - Full URL: ' . $endpoint );
-		error_log( '🔑 CoinSub Refund API - API Key: ' . ( $this->api_key ? 'SET' : 'NOT SET' ) );
-		error_log( '🔑 CoinSub Refund API - Merchant ID: ' . ( $this->merchant_id ?: 'NOT SET' ) );
-
 		$headers  = array(
 			'Content-Type' => 'application/json',
 			'Merchant-ID'  => $this->merchant_id,
@@ -340,12 +279,6 @@ class CoinSub_API_Client {
 	public function get_all_payments() {
 		$endpoint = rtrim( $this->api_base_url, '/' ) . '/payments/all';
 
-		// Log API request details
-		error_log( '🔍 CoinSub API - Get All Payments' );
-		error_log( '🔍 Endpoint: ' . $endpoint );
-		error_log( '🔍 Merchant ID: ' . ( empty( $this->merchant_id ) ? 'EMPTY!' : substr( $this->merchant_id, 0, 8 ) . '...' ) );
-		error_log( '🔍 API Key: ' . ( empty( $this->api_key ) ? 'EMPTY!' : 'SET' ) );
-
 		$headers = array(
 			'Content-Type' => 'application/json',
 			'Merchant-ID'  => $this->merchant_id,
@@ -361,7 +294,6 @@ class CoinSub_API_Client {
 		);
 
 		if ( is_wp_error( $response ) ) {
-			error_log( '❌ CoinSub API - WP Error: ' . $response->get_error_message() );
 			return new WP_Error( 'api_error', $response->get_error_message() );
 		}
 
@@ -369,12 +301,8 @@ class CoinSub_API_Client {
 		$body          = wp_remote_retrieve_body( $response );
 		$data          = json_decode( $body, true );
 
-		error_log( '🔍 Response Code: ' . $response_code );
-		error_log( '🔍 Response Body: ' . substr( $body, 0, 500 ) );
-
 		if ( $response_code !== 200 ) {
 			$error_message = isset( $data['error'] ) ? $data['error'] : 'API request failed';
-			error_log( '❌ CoinSub API - Error: ' . $error_message );
 			return new WP_Error( 'api_error', $error_message );
 		}
 
