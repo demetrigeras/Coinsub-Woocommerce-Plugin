@@ -108,7 +108,7 @@ class CoinSub_Webhook_Handler {
 		}
 
 		if ( ! $order && isset( $data['agreement_id'] ) ) {
-			$agreement_id = $data['agreement_id'];
+			$agreement_id        = $data['agreement_id'];
 			$orders_by_agreement = wc_get_orders(
 				array(
 					'meta_key'     => '_coinsub_agreement_id',

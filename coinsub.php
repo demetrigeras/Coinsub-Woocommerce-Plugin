@@ -53,7 +53,7 @@ function coinsub_add_privacy_policy_content() {
 	}
 
 	$privacy_url = 'https://coinsub.io/privacy';
-	$tos_url    = 'https://coinsub.io/tos';
+	$tos_url     = 'https://coinsub.io/tos';
 
 	$content = sprintf(
 		'<h2>%s</h2>' .
@@ -586,7 +586,7 @@ function coinsub_heartbeat_received( $response, $data, $screen_id ) {
 			if ( $redirect_flag === 'yes' ) {
 				$order->delete_meta_data( '_coinsub_redirect_to_received' );
 				$order->save();
-				$redirect_url = $order->get_checkout_order_received_url();
+				$redirect_url                         = $order->get_checkout_order_received_url();
 				$response['coinsub_webhook_complete'] = true;
 				$response['coinsub_redirect_url']     = $redirect_url;
 			}

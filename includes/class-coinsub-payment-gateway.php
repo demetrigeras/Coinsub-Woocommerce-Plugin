@@ -600,7 +600,7 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 			}
 
 			$purchase_session_data = $this->prepare_purchase_session_from_cart( $order, $cart_data );
-			$purchase_session = $this->api_client->create_purchase_session( $purchase_session_data );
+			$purchase_session      = $this->api_client->create_purchase_session( $purchase_session_data );
 
 			if ( is_wp_error( $purchase_session ) ) {
 				throw new Exception( $purchase_session->get_error_message() );
@@ -1085,8 +1085,8 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 			return new WP_Error( 'invalid_api_response', __( 'API returned invalid response. Please try again.', 'coinsub' ) );
 		}
 
-		$refund_id   = $refund_result['refund_id'] ?? $refund_result['transfer_id'] ?? 'N/A';
-		$transfer_id = $refund_result['transfer_id'] ?? $refund_result['refund_id'] ?? null;
+		$refund_id    = $refund_result['refund_id'] ?? $refund_result['transfer_id'] ?? 'N/A';
+		$transfer_id  = $refund_result['transfer_id'] ?? $refund_result['refund_id'] ?? null;
 		$network_name = $order->get_meta( '_coinsub_network_name' ) ?: $this->get_network_name( $chain_id );
 
 		$refund_note = sprintf(
@@ -1189,9 +1189,9 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 		);
 	}
 
-	
-	
-	
+
+
+
 	/**
 	 * Human-readable network name for a chain_id. Used as fallback when order meta
 	 * _coinsub_network_name (from webhook transaction_details.network) is not set.
