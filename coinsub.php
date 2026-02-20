@@ -494,7 +494,6 @@ function coinsub_ajax_clear_cart_after_payment() {
 
 	WC()->session->set( 'coinsub_order_id', null );
 	WC()->session->set( 'coinsub_purchase_session_id', null );
-	WC()->session->set( 'coinsub_pending_order_id', null );
 	WC()->cart->calculate_totals();
 	wc_clear_notices();
 

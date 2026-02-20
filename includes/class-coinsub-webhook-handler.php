@@ -515,13 +515,15 @@ class CoinSub_Webhook_Handler {
 
 		// Emails are now handled by WooCommerce order status hooks
 
-		// Clear session data since payment is now complete (only if available)
+		// Clear cart and session data since payment is now complete (only if available)
+		if ( function_exists( 'WC' ) && WC()->cart ) {
+			WC()->cart->empty_cart();
+		}
 		if ( function_exists( 'WC' ) && WC()->session ) {
 			WC()->session->set( 'coinsub_order_id', null );
 			WC()->session->set( 'coinsub_purchase_session_id', null );
-			WC()->session->set( 'coinsub_pending_order_id', null );
 		}
-		error_log( '✅ CoinSub Webhook - Cleared session after successful payment' );
+		error_log( '✅ CoinSub Webhook - Cleared cart/session if available after successful payment' );
 
 		// Set a flag to trigger redirect to order-received page
 		$order->update_meta_data( '_coinsub_redirect_to_received', 'yes' );

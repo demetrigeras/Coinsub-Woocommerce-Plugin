@@ -88,8 +88,6 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 		add_action( 'wp_ajax_coinsub_redirect_after_payment', array( $this, 'redirect_after_payment_ajax' ) );
 		add_action( 'wp_ajax_nopriv_coinsub_redirect_after_payment', array( $this, 'redirect_after_payment_ajax' ) );
 
-		add_action( 'woocommerce_before_checkout_form', array( $this, 'maybe_restore_cart_from_pending_order' ), 5 );
-
 	}
 
 	/**
@@ -532,55 +530,6 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 	}
 
 	/**
-	 * Restore cart from a pending CoinSub order when user returns to checkout with an empty cart.
-	 * Enables a fresh checkout / new purchase session when they place order again.
-	 */
-	public function maybe_restore_cart_from_pending_order() {
-		if ( ! function_exists( 'WC' ) || ! WC()->session || ! WC()->cart ) {
-			return;
-		}
-		$pending_order_id = WC()->session->get( 'coinsub_pending_order_id' );
-		if ( empty( $pending_order_id ) || ! WC()->cart->is_empty() ) {
-			return;
-		}
-		$order = wc_get_order( $pending_order_id );
-		if ( ! $order || $order->get_payment_method() !== 'coinsub' || ! in_array( $order->get_status(), array( 'pending', 'on-hold' ), true ) ) {
-			return;
-		}
-		$restored = 0;
-		foreach ( $order->get_items() as $item ) {
-			if ( ! $item->is_type( 'line_item' ) ) {
-				continue;
-			}
-			$product = $item->get_product();
-			if ( ! $product || ! $product->is_purchasable() ) {
-				continue;
-			}
-			$qty = (int) $item->get_quantity();
-			if ( $qty < 1 ) {
-				continue;
-			}
-			$variation_id = $item->get_variation_id();
-			$variation    = array();
-			if ( $variation_id ) {
-				foreach ( $item->get_meta_data() as $meta ) {
-					if ( strpos( $meta->key, 'attribute_' ) === 0 ) {
-						$variation[ $meta->key ] = $meta->value;
-					}
-				}
-			}
-			$added = WC()->cart->add_to_cart( $product->get_id(), $qty, $variation_id, $variation );
-			if ( $added ) {
-				$restored++;
-			}
-		}
-		if ( $restored > 0 ) {
-			WC()->session->set( 'coinsub_pending_order_id', null );
-			wc_add_notice( __( 'Your cart has been restored. Please place your order again to continue to payment.', 'coinsub' ), 'notice' );
-		}
-	}
-
-	/**
 	 * Process the payment and return the result
 	 */
 	public function process_payment( $order_id ) {
@@ -622,7 +571,7 @@ class WC_Gateway_CoinSub extends WC_Payment_Gateway {
 
 			$order->update_status( 'on-hold', __( 'Awaiting crypto payment. Customer redirected to Coinsub checkout.', 'coinsub' ) );
 
-			WC()->session->set( 'coinsub_pending_order_id', $order_id );
+			WC()->cart->empty_cart();
 			WC()->session->set( 'coinsub_order_id', null );
 
 			$checkout_url = $purchase_session['checkout_url'];

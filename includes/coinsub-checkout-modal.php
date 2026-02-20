@@ -231,7 +231,7 @@ jQuery(document).ready(function($) {
 						
 						// Create iframe container above the payment button
 						// The checkoutUrl from the API points to the Coinsub checkout page
-						var iframeContainer = $('<div id="coinsub-checkout-container" style="margin: 20px 0; background: white; border-radius: 16px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1); overflow: hidden;"><iframe id="coinsub-checkout-iframe" src="' + checkoutUrl + '" style="width: 100%; height: 800px; border: none;" allow="clipboard-read *; publickey-credentials-create *; publickey-credentials-get *; autoplay *; camera *; microphone *; payment *; fullscreen *" onload="handleIframeLoad()"></iframe></div>');
+						var iframeContainer = $('<div id="coinsub-checkout-container" style="margin: 20px 0; background: white; border-radius: 16px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1); overflow: hidden;"><iframe id="coinsub-checkout-iframe" src="' + checkoutUrl + '" style="width: 100%; height: 550px; border: none;" allow="clipboard-read *; publickey-credentials-create *; publickey-credentials-get *; autoplay *; camera *; microphone *; payment *; fullscreen *" onload="handleIframeLoad()"></iframe></div>');
 						
 						// Insert above the payment button
 						$('.woocommerce-checkout .form-row.place-order').before(iframeContainer);
